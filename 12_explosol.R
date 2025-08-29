@@ -207,3 +207,53 @@ for (site in sites) {
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
   print(p)
 }
+
+##NUAGE DE POINT = Evolution par site et par composés ###
+
+variables = c("MO_TOT...","P2O5_TOT...","AZOTE_TOT.mg.kg.","C.N","CAILLOUX...","ARGILE...","LIMONS_FINS...","LIMONS_GROSSIERS...","SABLES_FIN...","SABLES_GROSSIERS...")
+range_limits = range(c(df_site[[col_2025]], df_site[[col_2021]]), na.rm = TRUE)
+
+for (var in variables) {
+  
+  # Étape 1 : Préparer les données
+  data_wide = Sol %>%
+    select(Site, ID_LAG, Annee, value = all_of(var)) %>%
+    pivot_wider(names_from = Annee, values_from = value,
+                names_prefix = paste0(gsub("[^A-Za-z0-9]", "_", var), "_")) %>%
+    drop_na()  # retirer les lignes incomplètes
+  
+  # Noms des colonnes après pivot (ex: CARBONE_TOT_mg_kg__2021, etc.)
+  colnames_data = colnames(data_wide)
+  col_2021 = colnames_data[grepl("2021$", colnames_data)]
+  col_2025 = colnames_data[grepl("2025$", colnames_data)]
+  
+  # Vérifier que les deux colonnes existent avant de continuer
+  if (length(col_2021) == 1 && length(col_2025) == 1) {
+    
+    # Liste des sites
+    sites = unique(data_wide$Site)
+    
+    # Boucle sur chaque site
+    for (s in sites) {
+      
+      df_site = data_wide %>% filter(Site == s)
+      
+      # Construire le graphique dynamiquement
+      p = ggplot(df_site, aes_string(x = col_2025, y = col_2021, color = "ID_LAG")) +
+        geom_point(size = 3) +
+        geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red", size = 1) +
+        coord_fixed(ratio = 1, expand = TRUE) + 
+        labs(
+          title = paste0("Évolution de ", var, " - Site : ", s),
+          x = paste0(var, " en 2025"),
+          y = paste0(var, " en 2021"),
+          color = "Lagune (ID_LAG)"
+        ) +
+        theme_minimal()
+      
+      print(p)  # Affiche le graphique dans la console
+      
+      
+    }
+  }
+}
