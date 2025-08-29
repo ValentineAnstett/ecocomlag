@@ -1,9 +1,65 @@
 #Import dataset 
 getwd()
 setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Sol/Data/Processed")
-Sol = read.csv("Sol.csv", header = TRUE, sep = ",", dec=".")
+Sol = read.csv("Sol_21_25.csv", header = TRUE, sep = ",", dec=",")
+
+Sol= Sol %>%
+  mutate(across(4:14, as.numeric))
 
 ####INTER-SITES####
+#Type de sol 
+Sol_sanslag = Sol [,-3]
+Data = Sol_sanslag [, -c(3:6)]
+data_long = Data %>%
+  pivot_longer(cols = -c(Site, Annee), names_to = "Sol", values_to = "Pourcentage")
+ggplot(data_long, aes(x = Site, y = Pourcentage, fill = Sol)) +
+  geom_bar(stat = "identity", position = "stack") +
+  facet_wrap(~ Annee) +
+  labs(
+    title = "Type de sol par site",
+    x = "Site",
+    y = "Pourcentage (%)",
+    fill = "Sol"
+  ) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))  # Faire pivoter les noms des lagunes
+
+#Chimie ? 
+
+Data1 = Sol_sanslag [, -c(7:14)]
+data_long1 = Data1 %>%
+  pivot_longer(cols = -c(Site, Annee), names_to = "Sol", values_to = "Pourcentage")
+ggplot(data_long1, aes(x = Site, y = Pourcentage, fill = Sol)) +
+  geom_bar(stat = "identity", position = "stack") +
+  facet_wrap(~Annee) +
+  labs(
+    title = "Type de sol par site",
+    x = "Site",
+    y = "Pourcentage (%)",
+    fill = "Sol"
+  ) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))  # Faire pivoter les noms des lagunes
+
+
+#Evolution Azote dans le sol 2019/2025
+
+azote_data = Sol %>%
+  select(Site, ID_LAG, Annee, AZOTE_TOT.mg.kg.) %>%
+  pivot_wider(names_from = Annee, values_from = AZOTE_TOT.mg.kg. , names_prefix = "Azote_") %>%
+  drop_na(Azote_2021, Azote_2025)
+
+ggplot(azote_data, aes(x = Azote_2025, y = Azote_2021, color = Site)) +
+  geom_point(size = 3) +
+  labs(
+    x = "Azote en 2025",
+    y = "Azote en 2021",
+    title = "Comparaison des niveaux d'Azote dans le sol (%) par site (2021 vs 2025)",
+    color = "Site"
+  ) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray") +
+  theme_minimal()
+
+
+
 
 ####INTRA-SITES####
 
