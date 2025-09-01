@@ -188,6 +188,66 @@ for (site in sites_intra) {
   print(p)
 }
 
+#Nuage de points 
+##/!\Repartir du dataframe de base /!\##
+Cov_tot_moy = Cov_tot_moy %>%
+  mutate(across(4:21, as.numeric))
+
+Cov_tot_moy <- Cov_tot_moy %>%
+  mutate(LAGUNE = str_remove(LAGUNE, "^\\d{4}_"))
+
+variables = "TOT"
+
+for (var in variables) {
+  data_filtered = Cov_tot_moy %>%
+    filter(Annee %in% c(2020, 2025)) %>%
+    select(Site, LAGUNE, Annee, value = all_of(var))
+  
+  data_wide = data_filtered %>%
+    pivot_wider(
+      names_from = Annee,
+      values_from = value,
+      names_prefix = paste0(gsub("[^A-Za-z0-9]", "_", var), "_")
+    )
+  
+  print(colnames(data_wide))  # Debug
+  
+  col_2020 = colnames(data_wide)[grepl("2020$", colnames(data_wide))]
+  col_2025 = colnames(data_wide)[grepl("2025$", colnames(data_wide))]
+  
+  if (length(col_2020) == 1 && length(col_2025) == 1) {
+    data_wide = data_wide %>%
+      filter(!is.na(!!sym(col_2020)) & !is.na(!!sym(col_2025)))
+    
+    print(nrow(data_wide))  # Debug
+    
+    sites = unique(data_wide$Site)
+    
+    for (s in sites) {
+      message(paste("Traitement du site:", s))
+      df_site = data_wide %>% filter(Site == s)
+      
+      p = ggplot(df_site, aes_string(x = col_2025, y = col_2020, color = "LAGUNE")) +
+        geom_point(size = 3) +
+        geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red", size = 1) +
+        coord_fixed(ratio = 1, expand = TRUE) + 
+        labs(
+          title = paste0("Évolution du recouvrement végétal (%) sur le site : ", s),
+          x = paste0(var, " en 2025"),
+          y = paste0(var, " en 2020"),
+          color = "Lagune"
+        ) +
+        theme_minimal()
+      
+      print(p)  # Affiche le graphique
+    }
+    
+  } else {
+    message(paste("Colonnes manquantes pour la variable", var))
+  }
+}
+
+
 #### EXPLO INTER-STATIONS #### ----
 #Y a t il une difference entre les lagunes (stations), tous sites confondus
 
