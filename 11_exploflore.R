@@ -269,3 +269,130 @@ ggplot(data_long_stations, aes(x = LAGUNE, y = Recouvrement, fill = Espèce)) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
 
+
+#### ANALYSE MULTIVARIEE ####
+
+Data_multi = Cov_tot_moy
+Data_multi$Annee <- as.factor(Data_multi$Annee)
+Data_multi$Site <- as.factor(Data_multi$Site)
+Data_multi$LAGUNE <- as.factor(Data_multi$LAGUNE)
+
+Data_multi <- Data_multi %>%
+  mutate(piece_eau = sub("^[0-9]{4}_", "", LAGUNE))
+
+Data_multi = Data_multi %>%
+  select(colnames(Data_multi)[c(1:3, 21, 4:20)])
+
+df_species <- Data_multi %>% select(5:21)
+df_meta <- Data_multi %>% select(Annee, Site, LAGUNE, piece_eau)
+
+# Supprimer les lignes où toutes les espèces sont à 0 ou NA
+ligne_non_vides <- rowSums(df_species, na.rm = TRUE) > 0
+df_species_clean <- df_species[ligne_non_vides, ]
+
+# Supprimer les colonnes (espèces) qui sont toujours à 0 ou NA
+colonne_non_vides <- colSums(df_species_clean, na.rm = TRUE) > 0
+df_species_clean <- df_species_clean[, colonne_non_vides]
+
+# Remplacer les NA par 0 si nécessaire
+df_species_clean[is.na(df_species_clean)] <- 0
+
+df_meta_clean <- df_meta[ligne_non_vides, ]
+
+#NMDS
+
+nmds <- metaMDS(df_species_clean, distance = "bray", k = 2, trymax = 100)
+
+# Extraire les scores (coordonnées)
+scores_df <- as.data.frame(scores(nmds, display = "sites"))
+scores_df <- bind_cols(df_meta_clean, scores_df)
+
+lagunes_2020_2025 <- scores_df %>%
+  filter(Annee %in% c(2020, 2025)) %>%   # On prend uniquement 2020 et 2025
+  group_by(LAGUNE) %>%
+  summarise(annees_presente = list(unique(Annee))) %>%
+  filter(all(c(2020, 2025) %in% unlist(annees_presente))) %>%
+  pull(LAGUNE)
+
+scores_df_filtre <- scores_df %>%
+  filter(LAGUNE %in% lagunes_2020_2025)
+
+#Graph1 : Ellipses par sites 
+ggplot(scores_df, aes(x = NMDS1, y = NMDS2, color = Site)) +
+  geom_point(size = 1) +
+  stat_ellipse(type = "t") +
+  theme_minimal() +
+  labs(title = "Nuage de points NMDS + Ellipses par Site")
+
+#Graph2 : Ellipses par Annees 
+scores_df_filtre_ellipses <- scores_df_filtre %>%
+  group_by(Site) %>%
+  filter(n() >= 3) %>%
+  ungroup()
+
+ggplot(scores_df_filtre, aes(x = NMDS1, y = NMDS2, color = Annee)) +
+  geom_point(size = 2) +
+  stat_ellipse(type = "t") +
+  theme_minimal() +
+  labs(title = "NMDS + Ellipses par Année")
+
+#Graph 3 : Ellipses par Site/Annees + fleches 
+
+
+scores_df_filtre <- scores_df_filtre %>%
+  mutate(Site_Annee = paste(Site, Annee, sep = "_"))
+
+scores_df_filtre %>%
+  group_by(Site_Annee) %>%
+  summarise(nb_points = n()) %>%
+  filter(nb_points < 3)
+scores_df_filtre_ellipse <- scores_df_filtre %>%
+  group_by(Site_Annee) %>%
+  filter(n() >= 3) %>%
+  ungroup()
+
+centroids <- scores_df_filtre_ellipse %>%
+  group_by(Site, Annee, Site_Annee) %>%
+  summarise(
+    NMDS1 = mean(NMDS1, na.rm = TRUE),
+    NMDS2 = mean(NMDS2, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(Site, Annee)
+
+arrows_df <- centroids %>%
+  group_by(Site) %>%
+  arrange(Annee) %>%
+  mutate(
+    NMDS1_end = lead(NMDS1),
+    NMDS2_end = lead(NMDS2)
+  ) %>%
+  filter(!is.na(NMDS1_end) & !is.na(NMDS2_end)) %>%
+  ungroup()
+
+ggplot(scores_df_filtre_ellipse, aes(x = NMDS1, y = NMDS2, color = Site)) +
+  geom_point(aes(shape = Annee), size = 2) +
+  stat_ellipse(aes(group = Site_Annee), type = "t") +
+  geom_segment(data = arrows_df,
+               aes(x = NMDS1, y = NMDS2, xend = NMDS1_end, yend = NMDS2_end, color = Site),
+               arrow = arrow(type = "closed", length = unit(0.15, "inches")),
+               linewidth = 1) +
+  theme_minimal() +
+  labs(title = "Trajectoire temporelle des Sites dans l’espace NMDS (flèches entre ellipses)")
+
+
+
+#Graph 4 : Trajectoires par lagunes 
+ggplot(scores_df_filtre, aes(x = NMDS1, y = NMDS2)) +
+  geom_path(aes(group = piece_eau), 
+            arrow = arrow(type = "closed", length = unit(0.15, "inches")),
+            color = "grey50", linewidth = 0.8) +
+  geom_point(aes(color = Annee), size = 3) +
+  theme_minimal() +
+  labs(
+    title = "Trajectoires temporelles (coloration par année)",
+    x = "NMDS1",
+    y = "NMDS2",
+    color = "Année"
+  )
+
