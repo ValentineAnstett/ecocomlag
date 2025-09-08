@@ -248,9 +248,76 @@ ggplot(data_long_stations, aes(x = LAGUNE, y = Recouvrement, fill = Espèce)) +
 
 
 #### NUAGE DE POINTS : GLOBAL #### 
-#n sp ---- 
-#rec total ----
-#espece par espece ---- 
+#n sp / recouvrement total /  recouvrement espece par espece ---- 
+
+Cov_tot_moy = Cov_tot_moy %>%
+  mutate(across(4:21, as.numeric))
+
+Cov_tot_moy <- Cov_tot_moy %>%
+  mutate(LAGUNE = str_remove(LAGUNE, "^\\d{4}_"))
+
+Cov_tot_moy <- Cov_tot_moy %>%
+  rowwise() %>%
+  mutate(n_sp = sum(c_across(-c(Annee, Site, LAGUNE)) > 0, na.rm = TRUE)) %>%
+  ungroup()
+
+especes <- colnames(Cov_tot_moy)[!(colnames(Cov_tot_moy) %in% c("Annee", "Site", "LAGUNE"))]
+
+for (esp in especes) {
+    df_wide <- Cov_tot_moy %>%
+    select(Annee, Site, LAGUNE, value = all_of(esp)) %>%
+    filter(Annee %in% c(2020, 2025)) %>%
+    pivot_wider(
+      names_from = Annee,
+      values_from = value,
+      names_prefix = paste0(esp, "_")
+    ) %>%
+    drop_na()  # enlève les lignes incomplètes
+    col_2020 <- paste0(esp, "_2020")
+  col_2025 <- paste0(esp, "_2025")
+  
+  if (all(c(col_2020, col_2025) %in% colnames(df_wide))) {
+    
+    p <- ggplot(df_wide, aes_string(x = col_2025, y = col_2020, color = "Site")) +
+      geom_point(size = 3) +
+      geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red", linewidth = 1) +
+      coord_fixed(ratio = 1, xlim = c(0, 100), ylim = c(0, 100), expand = TRUE) +
+      labs(
+        title = paste("Évolution du recouvrement pour :", esp),
+        subtitle = "Comparaison 2020 vs 2025",
+        x = paste(esp, "en 2025 (%)"),
+        y = paste(esp, "en 2020 (%)"),
+        color = "Site"
+      ) +
+      theme_minimal()
+    
+    print(p) 
+  }
+}
+
+#graph seul n sp 
+df_n_sp = Cov_tot_moy %>%
+  select(Annee, Site, LAGUNE, n_sp) %>%
+  filter(Annee %in% c(2020, 2025)) %>%
+  pivot_wider(
+    names_from = Annee,
+    values_from = n_sp,
+    names_prefix = "n_sp_"
+  ) %>%
+  drop_na()
+
+ggplot(df_n_sp, aes(x = n_sp_2025, y = n_sp_2020, color = Site)) +
+  geom_point(size = 3) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red", linewidth = 1) +
+  coord_fixed(ratio = 1, xlim = c(0, 10), ylim = c(0, 10), expand = TRUE) +
+  labs(
+    title = "Évolution du nombre d'espèces par site",
+    subtitle = "Comparaison 2020 vs 2025",
+    x = "Nombre d'espèces en 2025 (> 0)",
+    y = "Nombre d'espèces en 2020 (> 0)",
+    color = "Site"
+  ) +
+  theme_minimal()
 
 #### ANALYSE MULTIVARIEE ####
 
