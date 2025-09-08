@@ -382,27 +382,11 @@ ggplot(scores_df_filtre, aes(x = NMDS1, y = NMDS2)) +
 
 #NMDS + TRICHE : Ajouter une minuscule valeur pour les valeurs à zéro ---- 
 
-colonnes_non_vides_triche <- colSums(df_species) > 0
-df_species_clean_triche <- df_species[, colonnes_non_vides_triche]
-
-# Identifier les lignes vides (toutes 0)
-lignes_vides_triche <- rowSums(df_species_clean_triche) == 0
-# Remplacer les lignes vides par une petite valeur (ex: 1e-6)
+colonnes_non_vides_triche = colSums(df_species, na.rm = TRUE) > 0
+df_species_clean_triche = df_species[, colonnes_non_vides_triche]
+lignes_vides_triche = rowSums(df_species_clean_triche) == 0
 df_species_clean_triche[lignes_vides_triche, ] <- 1e-6
-
-#test 
-# 1. Supprimer les colonnes d'espèces qui sont toutes à 0
-colonnes_non_vides_triche <- colSums(df_species, na.rm = TRUE) > 0
-df_species_clean_triche <- df_species[, colonnes_non_vides_triche]
-
-# 2. Identifier les lignes totalement nulles (sites sans aucune espèce)
-lignes_vides_triche <- rowSums(df_species_clean_triche) == 0
-
-# 3. Remplacer les lignes vides par une valeur minimale (triche)
-df_species_clean_triche[lignes_vides_triche, ] <- 1e-6
-
-# 4. Mettre à jour les métadonnées (pas besoin de filtrer ici)
-df_meta_clean_triche <- df_meta  # Même longueur que df_species_clean_triche
+df_meta_clean_triche = df_meta 
 
 #NMDS
 nmds_triche = metaMDS(df_species_clean_triche, distance = "bray", k = 2, trymax = 100)
@@ -426,7 +410,7 @@ ggplot(scores_df_triche, aes(x = NMDS1, y = NMDS2, color = Site)) +
   geom_point(size = 1) +
   stat_ellipse(type = "t") +
   theme_minimal() +
-  labs(title = "Nuage de points NMDS + Ellipses par Site")
+  labs(title = "NMDS par site / 2020 et 2025 confondus")
 
 #Graph2 : Ellipses par Annees 
 scores_df_triche_filtre_ellipses = scores_df_triche_filtre %>%
@@ -438,23 +422,43 @@ ggplot(scores_df_triche_filtre, aes(x = NMDS1, y = NMDS2, color = Annee)) +
   geom_point(size = 2) +
   stat_ellipse(type = "t") +
   theme_minimal() +
-  labs(title = "NMDS + Ellipses par Année")
+  labs(title = "NMDS par années")
 
 #Graph 3 : Ellipses par Site/Annees + fleches 
 
-scores_df_triche_filtre = scores_df_triche_filtre %>%
+scores_df_triche_filtre <- scores_df_triche_filtre %>%
   mutate(Site_Annee = paste(Site, Annee, sep = "_"))
 
-scores_df_triche_filtre %>%
+
+scores_df_triche_filtre %>% #Identifier les groupes avec < 3 points
   group_by(Site_Annee) %>%
   summarise(nb_points = n()) %>%
   filter(nb_points < 3)
-scores_df_triche_filtre_ellipse <- scores_df_triche_filtre %>%
+
+scores_df_triche_filtre_ellipse <- scores_df_triche_filtre %>% #Garder uniquement les groupes avec au moins 3 points
   group_by(Site_Annee) %>%
   filter(n() >= 3) %>%
   ungroup()
 
-centroids_triche = scores_df_triche_filtre_ellipse %>%
+groupes_sans_variance <- scores_df_triche_filtre_ellipse %>% # Identifier les groupes sans variance (points identiques)
+  group_by(Site_Annee) %>%
+  summarise(
+    var_NMDS1 = var(NMDS1),
+    var_NMDS2 = var(NMDS2),
+    .groups = "drop"
+  ) %>%
+  filter((is.na(var_NMDS1) | var_NMDS1 < 1e-6) & 
+           (is.na(var_NMDS2) | var_NMDS2 < 1e-6))
+
+cercles_centres <- scores_df_triche_filtre_ellipse %>%  # Extraire les centres pour les groupes sans variance
+  semi_join(groupes_sans_variance, by = "Site_Annee") %>%
+  group_by(Site, Annee, Site_Annee) %>%
+  summarise(NMDS1 = mean(NMDS1), NMDS2 = mean(NMDS2), .groups = "drop")
+
+scores_df_triche_filtre_ellipse_var <- scores_df_triche_filtre_ellipse %>% # Garder uniquement les groupes AVEC variance pour les ellipses
+  anti_join(groupes_sans_variance, by = "Site_Annee")
+
+centroids_triche <- scores_df_triche_filtre_ellipse %>% # Calculer les centroïdes pour les flèches
   group_by(Site, Annee, Site_Annee) %>%
   summarise(
     NMDS1 = mean(NMDS1, na.rm = TRUE),
@@ -463,7 +467,7 @@ centroids_triche = scores_df_triche_filtre_ellipse %>%
   ) %>%
   arrange(Site, Annee)
 
-arrows_df_triche = centroids_triche %>%
+arrows_df_triche <- centroids_triche %>%  # Calculer les flèches entre centroïdes
   group_by(Site) %>%
   arrange(Annee) %>%
   mutate(
@@ -475,15 +479,21 @@ arrows_df_triche = centroids_triche %>%
 
 ggplot(scores_df_triche_filtre_ellipse, aes(x = NMDS1, y = NMDS2, color = Site)) +
   geom_point(aes(shape = Annee), size = 2) +
-  stat_ellipse(aes(group = Site_Annee), type = "t") +
+  stat_ellipse(data = scores_df_triche_filtre_ellipse_var,
+               aes(group = Site_Annee),
+               type = "norm") +  # Petits cercles autour des groupes sans variance
+  geom_circle(data = cercles_centres,
+              aes(x0 = NMDS1, y0 = NMDS2, r = 0.05, color = Site),
+              inherit.aes = FALSE,
+              linetype = "dashed",
+              linewidth = 0.7) +
   geom_segment(data = arrows_df_triche,
-               aes(x = NMDS1, y = NMDS2, xend = NMDS1_end, yend = NMDS2_end, color = Site),
+               aes(x = NMDS1, y = NMDS2,
+                   xend = NMDS1_end, yend = NMDS2_end, color = Site),
                arrow = arrow(type = "closed", length = unit(0.15, "inches")),
                linewidth = 1) +
   theme_minimal() +
-  labs(title = "Trajectoire temporelle des Sites dans l’espace NMDS (flèches entre ellipses)")
-
-
+  labs(title = "Trajectoire temporelle des sites dans l’espace NMDS entre 2020 et 2025 (flèches entre ellipses)")
 
 #Graph 4 : Trajectoires par lagunes 
 ggplot(scores_df_triche_filtre, aes(x = NMDS1, y = NMDS2)) +
@@ -498,3 +508,6 @@ ggplot(scores_df_triche_filtre, aes(x = NMDS1, y = NMDS2)) +
     y = "NMDS2",
     color = "Année"
   )
+
+
+
