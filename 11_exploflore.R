@@ -319,7 +319,7 @@ ggplot(df_n_sp, aes(x = n_sp_2025, y = n_sp_2020, color = Site)) +
   ) +
   theme_minimal()
 
-#### ANALYSE MULTIVARIEE ####
+#### ANALYSE TRAJECTOIRE ####
 
 
 Data_multi = Cov_tot_moy
