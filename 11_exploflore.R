@@ -10,126 +10,100 @@ Cov_tot_moy = Cov_tot_moy[,-21]
 Cov_tot_moy = Cov_tot_moy %>%
   mutate(across(4:20, as.numeric))
 
-#### EXPLO INTER-SITES #### ----
+#### EXPLO INTER-SITES ####
 #Existe-il une difference entre les sites ? 
 
-#Agréger les lignes stations en une seule ligne site 
-Cov_tot_moy_mat_inter = Cov_tot_moy %>%
-  mutate(Site_Annee = paste(Site, Annee, sep = "_")) #Creer code anneeXsite pour regrouper
-Cov_tot_moy_mat_inter = Cov_tot_moy_mat_inter[,-(1:3)]
-Cov_tot_moy_mat_inter = Cov_tot_moy_mat_inter %>%
-  select(colnames(Cov_tot_moy_mat_inter)[c(18, 1:17)])
+Cov_tot_moy_mat_inter <- Cov_tot_moy %>%
+  mutate(Site_Annee = paste(Site, Annee, sep = "_")) %>%  # Créer Site_Annee
+  select(Site_Annee, everything(), -c(Site, Annee, LAGUNE))  # Réorganiser les colonnes
 
-df_aggregated_inter = aggregate(. ~ Site_Annee, data = Cov_tot_moy_mat_inter, FUN = mean) #Agreger les lignes des memes sites 
+df_aggregated_inter <- Cov_tot_moy_mat_inter %>%
+  group_by(Site_Annee) %>%
+  summarise(across(everything(), mean, na.rm = TRUE), .groups = "drop")
 
-###GGPLOTS###
-#Années confondues
-Data_inter = Cov_tot_moy[, -c(1,3)]
-data_long_inter = Data_inter %>%
-  pivot_longer(cols = -Site, names_to = "Espèce", values_to = "Recouvrement")
+# --- GGPLOTS ---
 
-ggplot(data_long_inter, aes(x = Site, y = Recouvrement, fill = Espèce)) +
+# 1. Recouvrement moyen par site (toutes années confondues)
+data_long_inter <- Cov_tot_moy %>%
+  select(-Annee, -LAGUNE) %>%
+  pivot_longer(-Site, names_to = "Espece", values_to = "Recouvrement")
+
+ggplot(data_long_inter, aes(x = Site, y = Recouvrement, fill = Espece)) +
   geom_bar(stat = "identity", position = "stack") +
-  labs(
-    title = "Recouvrement moyen des espèces par site",
-    x = "Site",
-    y = "Taux de recouvrement (%)",
-    fill = "Espèce"
-  ) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))  # Faire pivoter les noms des lagunes
+  labs(title = "Recouvrement moyen des espèces par site",
+       x = "Site", y = "Taux de recouvrement (%)", fill = "Espèce") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
-#Année par année 
-data_long_2_inter = Cov_tot_moy%>%
-  pivot_longer(cols = -c(Annee,Site, LAGUNE), 
-               names_to = "Espece", 
-               values_to = "Recouvrement")
-
-df_moyenne_inter = data_long_2_inter %>%
+# 2. Recouvrement moyen par site et par année
+df_moyenne_inter <- Cov_tot_moy %>%
+  pivot_longer(cols = -c(Annee, Site, LAGUNE), names_to = "Espece", values_to = "Recouvrement") %>%
   group_by(Annee, Site, Espece) %>%
   summarise(Recouvrement_Moyen = mean(Recouvrement, na.rm = TRUE), .groups = "drop")
 
-
-for(annee in unique(df_moyenne_inter$Annee)) {
-  df_annee_inter = df_moyenne_inter %>% filter(Annee == annee)
-  p = ggplot(df_annee_inter, aes(x = Site, y = Recouvrement_Moyen, fill = Espece)) + 
+# Graphes en barres par année
+lapply(unique(df_moyenne_inter$Annee), function(annee) {
+  df_annee <- filter(df_moyenne_inter, Annee == annee)
+  ggplot(df_annee, aes(x = Site, y = Recouvrement_Moyen, fill = Espece)) +
     geom_bar(stat = "identity", position = "stack") +
     labs(title = paste("Recouvrement moyen par site pour l'année", annee),
-         x = "Site",
-         y = "Taux de recouvrement (%)") +
-    theme_minimal()
-  print(p)
-}
+         x = "Site", y = "Taux de recouvrement (%)") +
+    theme_minimal() %>%
+    print()
+})
 
-#Combinaison site-Année 
-#Sur le même graph
-data_long_3_inter = data_long_2_inter %>%
-  mutate(Site_Annee = paste(Site, Annee, sep = "_"))
-data_long_3_inter = data_long_3_inter[,-c(1,2,3)]
-
-df_moyenne_2_inter = data_long_3_inter %>%
+# 3. Recouvrement moyen par Site_Annee (sur un même graphique ou facetté)
+df_moyenne_2_inter <- df_moyenne_inter %>%
+  mutate(Site_Annee = paste(Site, Annee, sep = "_")) %>%
   group_by(Site_Annee, Espece) %>%
-  summarise(Recouvrement_Moyen = mean(Recouvrement, na.rm = TRUE), .groups = "drop")
+  summarise(Recouvrement_Moyen = mean(Recouvrement_Moyen, na.rm = TRUE), .groups = "drop") %>%
+  mutate(Site = sub("_.*", "", Site_Annee))  # Extraire le site pour facettage
 
+# Graph global
 ggplot(df_moyenne_2_inter, aes(x = Site_Annee, y = Recouvrement_Moyen, fill = Espece)) +
-  geom_bar(stat = "identity", position = "Stack") +
+  geom_bar(stat = "identity", position = "stack") +
   labs(title = "Recouvrement moyen par Site et Année",
-       x = "Site et Année",
-       y = "Recouvrement moyen (%)") +
+       x = "Site et Année", y = "Recouvrement moyen (%)") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-# Extraire le site de la colonne Site_Annee pour la facette
-df_moyenne_2_inter$Site = sapply(strsplit(as.character(df_moyenne_2_inter$Site_Annee), "_"), function(x) x[1])
+# Graph facetté par site
 ggplot(df_moyenne_2_inter, aes(x = Site_Annee, y = Recouvrement_Moyen, fill = Espece)) +
-  geom_bar(stat = "identity", position = "Stack") +
+  geom_bar(stat = "identity", position = "stack") +
   labs(title = "Recouvrement moyen par Site et Année",
-       x = "Site et Année",
-       y = "Recouvrement moyen (%)") +
+       x = "Site et Année", y = "Recouvrement moyen (%)") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   facet_wrap(~ Site, scales = "free_x")
 
-### Graphs en courbes 
-
-data_avg_inter = Cov_tot_moy %>%
+# 4. Graphiques en courbes - Évolution temporelle
+data_long_courbes_inter <- Cov_tot_moy %>%
   group_by(Annee, Site) %>%
-  summarise(across(2:18, mean, na.rm = TRUE), .groups = "drop")
+  summarise(across(where(is.numeric), mean, na.rm = TRUE), .groups = "drop") %>%
+  pivot_longer(cols = -c(Annee, Site), names_to = "Espece", values_to = "Pourcentage")
 
-data_long_courbes_inter = data_avg_inter %>%
-  pivot_longer(cols = -c(Annee,Site), 
-               names_to = "Espèce", 
-               values_to = "Pourcentage")
-
-#Tout sur le même graph
-ggplot(data_long_courbes_inter, aes(x = Annee, y = Pourcentage, color = Espèce, group = Espèce)) +
-  geom_line() +  # Ajouter les lignes pour les courbes
-  geom_point() +  # Ajouter les points pour chaque année
-  facet_wrap(~ Site, scales = "free_y") +  # Créer un graphique pour chaque site avec des axes Y indépendants
-  labs(title = "Evolution des pourcentages de recouvrement des espèces par site",
-       x = "Année", 
-       y = "Pourcentage de recouvrement") +
-  theme_minimal() + 
+# Tout sur un même graphique avec facettes
+ggplot(data_long_courbes_inter, aes(x = Annee, y = Pourcentage, color = Espece, group = Espece)) +
+  geom_line() + geom_point() +
+  facet_wrap(~ Site, scales = "free_y") +
+  labs(title = "Évolution des pourcentages de recouvrement des espèces par site",
+       x = "Année", y = "Pourcentage de recouvrement") +
+  theme_minimal() +
   theme(legend.title = element_blank())
 
-#Un graph par site 
+# Un graphique par site
+lapply(unique(data_long_courbes_inter$Site), function(site) {
+  ggplot(filter(data_long_courbes_inter, Site == site),
+         aes(x = Annee, y = Pourcentage, color = Espece, group = Espece)) +
+    geom_line() + geom_point() +
+    labs(title = paste("Évolution des pourcentages pour", site),
+         x = "Année", y = "Pourcentage de recouvrement") +
+    theme_minimal() +
+    theme(legend.title = element_blank()) +
+    guides(color = guide_legend(override.aes = list(size = 3))) %>%
+    print()
+})
 
-sites = unique(data_long_courbes_inter$Site)
-for (site in sites) {
-  data_site_inter = subset(data_long_courbes_inter, Site == site)
-  q = ggplot(data_site_inter, aes(x = Annee, y = Pourcentage, color = Espèce, group = Espèce)) +
-    geom_line() +  # Ajouter les lignes pour les courbes
-    geom_point() +  # Ajouter les points pour chaque année
-    labs(title = paste("Evolution des pourcentages de recouvrement des espèces pour", site),
-         x = "Année", 
-         y = "Pourcentage de recouvrement") +
-    theme_minimal() + 
-    theme(legend.title = element_blank()) + 
-    guides(color = guide_legend(override.aes = list(size = 3)))
-  print(q)
-}
-
-
-#### EXPLO INTRA-SITES #### ---- 
+#### EXPLO INTRA-SITES #### 
 #Existe t-il une différence entre les lagunes d'un même site ? 
 
 data_long_intra = Cov_tot_moy %>%
@@ -248,7 +222,8 @@ for (var in variables) {
 }
 
 
-#### EXPLO INTER-STATIONS #### ----
+
+#### EXPLO INTER-STATIONS ####
 #Y a t il une difference entre les lagunes (stations), tous sites confondus
 
 Cov_tot_moy_stations = Cov_tot_moy [,-21]
