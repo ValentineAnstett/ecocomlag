@@ -21,8 +21,7 @@ df_aggregated_inter <- Cov_tot_moy_mat_inter %>%
   group_by(Site_Annee) %>%
   summarise(across(everything(), mean, na.rm = TRUE), .groups = "drop")
 
-# --- GGPLOTS ---
-
+#ggplots ----
 # 1. Recouvrement moyen par site (toutes années confondues)
 data_long_inter <- Cov_tot_moy %>%
   select(-Annee, -LAGUNE) %>%
@@ -103,6 +102,8 @@ lapply(unique(data_long_courbes_inter$Site), function(site) {
     print()
 })
 
+#Nuages de points ----
+
 #### EXPLO INTRA-SITES #### 
 #Existe t-il une différence entre les lagunes d'un même site ? 
 
@@ -111,7 +112,7 @@ data_long_intra = Cov_tot_moy %>%
 
 data_long_intra$LAGUNE = gsub("^\\d{4}_", "", data_long_intra$LAGUNE)
 
-###GGPLOTS###
+#ggplots ----
 
 ##Annes par annees 
 #Sur le meme graph
@@ -162,7 +163,7 @@ for (site in sites_intra) {
   print(p)
 }
 
-#Nuage de points 
+#Nuage de points---- 
 ##/!\Repartir du dataframe de base /!\##
 Cov_tot_moy = Cov_tot_moy %>%
   mutate(across(4:21, as.numeric))
@@ -204,7 +205,7 @@ for (var in variables) {
       p = ggplot(df_site, aes_string(x = col_2025, y = col_2020, color = "LAGUNE")) +
         geom_point(size = 3) +
         geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red", size = 1) +
-        coord_fixed(ratio = 1, expand = TRUE) + 
+        coord_fixed(ratio = 1, xlim = c(0, 100), ylim = c(0, 100), expand = TRUE) +
         labs(
           title = paste0("Évolution du recouvrement végétal (%) sur le site : ", s),
           x = paste0(var, " en 2025"),
@@ -232,7 +233,7 @@ Data_stations = Cov_tot_moy_stations[, c(-1, -2)]
 data_long_stations = Data_stations %>%
   pivot_longer(cols = -LAGUNE, names_to = "Espèce", values_to = "Recouvrement")
 
-###GGPLOTS###
+#ggplots ----
 ggplot(data_long_stations, aes(x = LAGUNE, y = Recouvrement, fill = Espèce)) +
   geom_bar(stat = "identity", position = "stack") +
   labs(
@@ -243,7 +244,13 @@ ggplot(data_long_stations, aes(x = LAGUNE, y = Recouvrement, fill = Espèce)) +
   ) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
+#Nuage de points ---
 
+
+#### NUAGE DE POINTS : GLOBAL #### 
+#n sp ---- 
+#rec total ----
+#espece par espece ---- 
 
 #### ANALYSE MULTIVARIEE ####
 
@@ -268,7 +275,7 @@ Data_multi = Data_multi %>%
 df_species = Data_multi %>% select(5:21)
 df_meta = Data_multi %>% select(Annee, Site, LAGUNE, piece_eau)
 
-#NMDS :  distance ecologique mais suppression des lignes avec que des zéros  #----
+#nmds :  distance ecologique mais suppression des lignes avec que des zéros  #----
 
 # Supprimer les lignes où toutes les espèces sont à 0 ou NA 
 ligne_non_vides = rowSums(df_species, na.rm = TRUE) > 0 
@@ -380,7 +387,7 @@ ggplot(scores_df_filtre, aes(x = NMDS1, y = NMDS2)) +
 
 
 
-#NMDS + TRICHE : Ajouter une minuscule valeur pour les valeurs à zéro ---- 
+#nmds + triche : Ajouter une minuscule valeur pour les valeurs à zéro ---- 
 
 colonnes_non_vides_triche = colSums(df_species, na.rm = TRUE) > 0
 df_species_clean_triche = df_species[, colonnes_non_vides_triche]
