@@ -279,17 +279,22 @@ for (esp in especes) {
   if (all(c(col_2020, col_2025) %in% colnames(df_wide))) {
     
     p <- ggplot(df_wide, aes_string(x = col_2025, y = col_2020, color = "Site")) +
-      geom_point(size = 3) +
+      geom_jitter(size = 3,width = 0.2, height = 0.2) +
       geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red", linewidth = 1) +
       coord_fixed(ratio = 1, xlim = c(0, 100), ylim = c(0, 100), expand = TRUE) +
       labs(
         title = paste("Évolution du recouvrement pour :", esp),
-        subtitle = "Comparaison 2020 vs 2025",
-        x = paste(esp, "en 2025 (%)"),
-        y = paste(esp, "en 2020 (%)"),
+        x = "2025",
+        y = "2020",
         color = "Site"
       ) +
-      theme_minimal()
+      theme_minimal()+
+      theme(
+        panel.grid.major = element_line(color = "grey60", size = 0.6),  # Quadrillage principal renforcé
+        panel.grid.minor = element_line(color = "grey80", size = 0.3),  # Quadrillage secondaire visible
+        panel.border = element_rect(color = "black", fill = NA, size = 0.8),  # Contour du graphique
+        axis.line = element_line(color = "black", size = 0.8)  # Axes visibles
+      )
     
     print(p) 
   }
@@ -307,17 +312,22 @@ df_n_sp = Cov_tot_moy %>%
   drop_na()
 
 ggplot(df_n_sp, aes(x = n_sp_2025, y = n_sp_2020, color = Site)) +
-  geom_point(size = 3) +
+  geom_jitter(size = 3,width = 0.2, height = 0.2) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red", linewidth = 1) +
   coord_fixed(ratio = 1, xlim = c(0, 10), ylim = c(0, 10), expand = TRUE) +
   labs(
-    title = "Évolution du nombre d'espèces par site",
-    subtitle = "Comparaison 2020 vs 2025",
-    x = "Nombre d'espèces en 2025 (> 0)",
-    y = "Nombre d'espèces en 2020 (> 0)",
+    title = "Nombre d'espèces par site",
+    x = "2025",
+    y = "2020",
     color = "Site"
   ) +
-  theme_minimal()
+  theme_minimal()+
+  theme(
+    panel.grid.major = element_line(color = "grey60", size = 0.6),  # Quadrillage principal renforcé
+    panel.grid.minor = element_line(color = "grey80", size = 0.3),  # Quadrillage secondaire visible
+    panel.border = element_rect(color = "black", fill = NA, size = 0.8),  # Contour du graphique
+    axis.line = element_line(color = "black", size = 0.8)  # Axes visibles
+  )
 
 #### ANALYSE TRAJECTOIRE ####
 
@@ -375,9 +385,16 @@ scores_df_filtre = scores_df %>%
 #Graph1 : Ellipses par sites 
 ggplot(scores_df, aes(x = NMDS1, y = NMDS2, color = Site)) +
   geom_point(size = 1) +
-  stat_ellipse(type = "t") +
+  stat_ellipse(type = "t", level = 0.68, linewidth = 1)  + # niveau de confiance 0.95 ou 0.68
+  geom_hline(yintercept = 0, color = "black", linewidth = 0.5, linetype = "dotted") +  # Axe horizontal
+  geom_vline(xintercept = 0, color = "black", linewidth = 0.5, linetype = "dotted") +  # Axe vertical
   theme_minimal() +
-  labs(title = "Nuage de points NMDS + Ellipses par Site")
+  labs(title = "Nuage de points NMDS + Ellipses par Site") +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),  # Contour du graphique
+    axis.line = element_line(color = "black", linewidth = 0.8),
+    panel.grid.major = element_line(color = "grey80", size = 0.5)
+  )
 
 #Graph2 : Ellipses par Annees 
 scores_df_filtre_ellipses = scores_df_filtre %>%
@@ -480,23 +497,78 @@ scores_df_triche_filtre = scores_df_triche %>%
   filter(LAGUNE %in% lagunes_2020_2025)
 
 #Graph1 : Ellipses par sites 
+
+species_scores <- as.data.frame(scores(nmds_triche, display = "species"))
+species_scores$Species <- rownames(species_scores)
+colnames(species_scores)[1:2] <- c("NMDS1", "NMDS2")
+
 ggplot(scores_df_triche, aes(x = NMDS1, y = NMDS2, color = Site)) +
   geom_point(size = 1) +
   stat_ellipse(type = "t") +
+  geom_segment(data = species_scores, aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
+               arrow = arrow(length = unit(0.2, "cm")),
+               color = "black", inherit.aes = FALSE) +
+  geom_text(data = species_scores, aes(x = NMDS1, y = NMDS2, label = Species),
+            color = "black", vjust = -0.5, inherit.aes = FALSE) +
+  
+  geom_hline(yintercept = 0, color = "black", linewidth = 0.5, linetype = "dotted") +
+  geom_vline(xintercept = 0, color = "black", linewidth = 0.5, linetype = "dotted") +
+  
   theme_minimal() +
-  labs(title = "NMDS par site / 2020 et 2025 confondus")
+  labs(title = "NMDS par site / 2020 et 2025 confondus") +
+  
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    axis.line = element_line(color = "black", linewidth = 0.8),
+    panel.grid.major = element_line(color = "grey80", size = 0.5)
+  )
 
 #Graph2 : Ellipses par Annees 
-scores_df_triche_filtre_ellipses = scores_df_triche_filtre %>%
-  group_by(Site) %>%
-  filter(n() >= 3) %>%
-  ungroup()
+
+centres <- scores_df_triche_filtre %>%
+  filter(Annee %in% c(2020, 2025)) %>%
+  group_by(Annee) %>%
+  summarise(
+    centre_NMDS1 = mean(NMDS1),
+    centre_NMDS2 = mean(NMDS2)
+  )
+
+fleche <- data.frame(
+  x = centres$centre_NMDS1[centres$Annee == 2020],
+  y = centres$centre_NMDS2[centres$Annee == 2020],
+  xend = centres$centre_NMDS1[centres$Annee == 2025],
+  yend = centres$centre_NMDS2[centres$Annee == 2025]
+)
 
 ggplot(scores_df_triche_filtre, aes(x = NMDS1, y = NMDS2, color = Annee)) +
-  geom_point(size = 2) +
-  stat_ellipse(type = "t") +
+  geom_jitter(size = 2) +
+  stat_ellipse(type = "norm") +
+  geom_segment(data = species_scores, aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
+               arrow = arrow(length = unit(0.2, "cm")),
+               color = "black", inherit.aes = FALSE) +
+  geom_text(data = species_scores, aes(x = NMDS1, y = NMDS2, label = Species),
+            color = "black", vjust = -0.5, inherit.aes = FALSE) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_segment(data = fleche, aes(x = x, y = y, xend = xend, yend = yend),
+               arrow = arrow(length = unit(0.3, "cm")),
+               color = "red", size = 1, inherit.aes = FALSE) +
+  
   theme_minimal() +
-  labs(title = "NMDS par années")
+  labs(
+    title = "NMDS par années",
+    x = "Axe NMDS 1",
+    y = "Axe NMDS 2",
+    color = "Année"
+  ) +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    axis.line = element_line(color = "black", linewidth = 0.8),
+    panel.grid.major = element_line(color = "grey80", size = 0.5),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12)
+  )
+
 
 #Graph 3 : Ellipses par Site/Annees + fleches 
 
@@ -572,8 +644,8 @@ ggplot(scores_df_triche_filtre_ellipse, aes(x = NMDS1, y = NMDS2, color = Site))
 #Graph 4 : Trajectoires par lagunes 
 ggplot(scores_df_triche_filtre, aes(x = NMDS1, y = NMDS2)) +
   geom_path(aes(group = piece_eau), 
-            arrow = arrow(type = "closed", length = unit(0.09, "inches")),
-            color = "grey50", linewidth = 0.8) +
+            arrow = arrow(type = "closed", length = unit(0.05, "inches")),
+            color = "grey50", linewidth = 0.3) +
   geom_point(aes(color = Annee), size = 1) +
   theme_minimal() +
   labs(
