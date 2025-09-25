@@ -44,9 +44,10 @@ Hydro_germi <- Hydro %>%
   ) %>%
   filter(
     # Garder avril 2020 et avril 2025 pour tous les sites
-    (annee %in% c(2020, 2025) & mois == 4) |
-      # Ajouter mars 2025 uniquement pour certains sites
-      (annee == 2025 & mois == 3 & site %in% sites_mars_2025)
+    (annee == 2020 & mois == 4) |
+      (annee == 2025 & mois == 4 & !site %in% c("Orpellieres", "La Grande Motte")) |
+      # Mars 2025 uniquement pour Orpellieres et Grande Motte
+      (annee == 2025 & mois == 3 & site %in% c("Orpellieres", "La Grande Motte","Capelude","Chaumadou"))
   )
 
 Hydro_germi = Hydro_germi[,-c(3,4,5,6,13,15)]
@@ -57,7 +58,9 @@ Hydro_germi = Hydro_germi %>%
 sites_a_exclure =  c("Hyeres", "Villeroy", "Salses-Leucate", "Canet", "Pissevaches")
 Hydro_germi = Hydro_germi %>%
   filter(!site %in% sites_a_exclure)
-
+lag_a_exclure =  c("PCA_CHA_02", "PCA_CHA_04", "LAP_SAL_11")
+Hydro_germi = Hydro_germi %>%
+  filter(!code %in% lag_a_exclure)
 
 # Importer dans processed 
 write.csv(Hydro_germi, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_hydro/Hydro_germi.csv", row.names = FALSE)
