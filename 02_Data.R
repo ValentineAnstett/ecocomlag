@@ -1,6 +1,6 @@
 ####DATA HYDRO####
 getwd()
-setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Hydro/Data/Processed")
+setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_hydro")
 Hydro = read.csv("Hydro_Finale_19_23_25.csv", header = TRUE, sep = ",", dec=",")
 
 Hydro = Hydro %>%
