@@ -35,7 +35,7 @@ print("Mois optimal par année :")
 print(mois_max_sites)
 
 #Creer le dataframe pour germi
-sites_mars_2025 <- c("Chaumadou", "Capelude", "La Grande Motte", "La Palme")
+
 
 Hydro_germi <- Hydro %>%
   mutate(
@@ -46,19 +46,25 @@ Hydro_germi <- Hydro %>%
     # Garder avril 2020 et avril 2025 pour tous les sites
     (annee == 2020 & mois == 4) |
       (annee == 2025 & mois == 4 & !site %in% c("Orpellieres", "La Grande Motte")) |
-      # Mars 2025 uniquement pour Orpellieres et Grande Motte
-      (annee == 2025 & mois == 3 & site %in% c("Orpellieres", "La Grande Motte","Capelude","Chaumadou"))
+      # Mars 2025 uniquement pour ces sites
+      (annee == 2025 & mois == 3 & site %in% c("Orpellieres", "La Grande Motte","Capelude","Chaumadou","La Palme"))
   )
 
 Hydro_germi = Hydro_germi[,-c(3,4,5,6,13,15)]
 Hydro_germi = Hydro_germi [,c(1,2,9,3:8)]
 Hydro_germi = Hydro_germi %>%
   mutate(eau = if_else(tolower(eau) == "oui", 1, 0))
+Hydro_germi = Hydro_germi %>%
+  mutate(salinite = round(salinite, 1),
+         conductivite = round(conductivite, 1)
+         )
+Hydro_germi= Hydro_germi %>%
+  mutate(across(6:9, ~as.numeric(gsub(",", ".", .x))))
 
 sites_a_exclure =  c("Hyeres", "Villeroy", "Salses-Leucate", "Canet", "Pissevaches")
 Hydro_germi = Hydro_germi %>%
   filter(!site %in% sites_a_exclure)
-lag_a_exclure =  c("PCA_CHA_02", "PCA_CHA_04", "LAP_SAL_11")
+lag_a_exclure =  c("PCA_CHA_02", "PCA_CHA_04")
 Hydro_germi = Hydro_germi %>%
   filter(!code %in% lag_a_exclure)
 
