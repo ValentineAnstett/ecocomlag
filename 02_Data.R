@@ -54,17 +54,18 @@ Hydro_germi = Hydro_germi[,-c(3,4,5,6,13,15)]
 Hydro_germi = Hydro_germi [,c(1,2,9,3:8)]
 Hydro_germi = Hydro_germi %>%
   mutate(eau = if_else(tolower(eau) == "oui", 1, 0))
+
+Hydro_germi= Hydro_germi %>%
+  mutate(across(6:9, ~as.numeric(gsub(",", ".", .x))))
 Hydro_germi = Hydro_germi %>%
   mutate(salinite = round(salinite, 1),
          conductivite = round(conductivite, 1)
          )
-Hydro_germi= Hydro_germi %>%
-  mutate(across(6:9, ~as.numeric(gsub(",", ".", .x))))
 
 sites_a_exclure =  c("Hyeres", "Villeroy", "Salses-Leucate", "Canet", "Pissevaches")
 Hydro_germi = Hydro_germi %>%
   filter(!site %in% sites_a_exclure)
-lag_a_exclure =  c("PCA_CHA_02", "PCA_CHA_04")
+lag_a_exclure =  c("PCA_CHA_02", "PCA_CHA_04", "ORB_ORP_11")
 Hydro_germi = Hydro_germi %>%
   filter(!code %in% lag_a_exclure)
 
