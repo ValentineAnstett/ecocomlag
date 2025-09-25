@@ -35,14 +35,29 @@ print("Mois optimal par année :")
 print(mois_max_sites)
 
 #Creer le dataframe pour germi
-Hydro_germi = Hydro %>%
+sites_mars_2025 <- c("Chaumadou", "Capelude", "La Grande Motte", "La Palme")
+
+Hydro_germi <- Hydro %>%
   mutate(
     annee = year(date_releve),
     mois = month(date_releve)
   ) %>%
   filter(
-    annee %in% c(2020, 2025),
-    mois == 4
+    # Garder avril 2020 et avril 2025 pour tous les sites
+    (annee %in% c(2020, 2025) & mois == 4) |
+      # Ajouter mars 2025 uniquement pour certains sites
+      (annee == 2025 & mois == 3 & site %in% sites_mars_2025)
   )
+
+Hydro_germi = Hydro_germi[,-c(3,4,5,6,13,15)]
+Hydro_germi = Hydro_germi [,c(1,2,9,3:8)]
+Hydro_germi = Hydro_germi %>%
+  mutate(eau = if_else(tolower(eau) == "oui", 1, 0))
+
+sites_a_exclure =  c("Hyeres", "Villeroy", "Salses-Leucate", "Canet", "Pissevaches")
+Hydro_germi = Hydro_germi %>%
+  filter(!site %in% sites_a_exclure)
+
+
 # Importer dans processed 
 write.csv(Hydro_germi, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_hydro/Hydro_germi.csv", row.names = FALSE)
