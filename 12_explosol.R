@@ -6,6 +6,11 @@ Sol = read.csv("Sol_21_25.csv", header = TRUE, sep = ",", dec=",")
 Sol= Sol %>%
   mutate(across(4:14, as.numeric))
 
+Chimique = Sol [, -c(8:14)]
+
+
+Type_sol = Sol [, -c(4:7)]
+
 ####INTER-SITES####
 #Type de sol 
 Sol_sanslag = Sol [,-3]
@@ -301,15 +306,16 @@ for (comp in Compo) {
 
 
 #### ANALYSE MULTI ####
-
-Data_multi = Sol %>% select(-PARTICULES_FINES)
+##Type_SOL 
+Data_multi = Chimique %>% select(-PARTICULES_FINES) ###Ici changer le dataset pour changer les graphs 
+Data_multi = Chimique
 sites_a_exclure = c("BPA_PIS", "BAG_GRA", "CAN_NAZ", "HYE_VIE", "THA_SET")
 Data_multi = Data_multi %>%
   filter(!(Site %in% sites_a_exclure))
 Data_multi$Annee = as.factor(Data_multi$Annee)
 Data_multi$Site = as.factor(Data_multi$Site)
 Data_multi$ID_LAG = as.factor(Data_multi$ID_LAG)
-df_composes = Data_multi %>% select(4:13)
+df_composes = Data_multi %>% select(4:7) #Adapter le nombre de colonnes au dataset selectionné 
 df_meta = Data_multi %>% select(Annee, Site, ID_LAG)
 df_composes_clean = df_composes %>%
   mutate(across(everything(), as.numeric)) %>%
@@ -452,9 +458,155 @@ ggplot(scores_df_filtre, aes(x = NMDS1, y = NMDS2)) +
 
 
 
+#PCA : Creation d'une fonction pour y appliquer les differents dataset 
+
+faire_graphs_pca <- function(data, nom_dataset, colonnes_compo, sites_a_exclure = NULL) {
+  
+  # 1. Nettoyage de base
+  data = data %>%
+    filter(!(Site %in% sites_a_exclure)) %>%
+    mutate(
+      Annee = as.factor(Annee),
+      Site = as.factor(Site),
+      ID_LAG = as.factor(ID_LAG)
+    )
+  # 2. Séparation composantes et métadonnées
+  df_composes = data %>%
+    select(all_of(colonnes_compo)) %>%
+    mutate(across(everything(), as.numeric)) %>%
+    select(where(~ sd(., na.rm = TRUE) > 0)) %>%
+    filter(rowSums(is.na(.)) < ncol(.))
+  
+  df_meta = data %>% select(Annee, Site, ID_LAG)
+  
+  # 3. PCA
+  pca = prcomp(df_composes, center = TRUE, scale. = TRUE)
+  scores_df = as.data.frame(pca$x[, 1:2])
+  colnames(scores_df) = c("PCA1", "PCA2")
+  scores_df = bind_cols(df_meta, scores_df)
+  
+  compo_scores = as.data.frame(pca$rotation[, 1:2])
+  compo_scores$Compo = rownames(compo_scores)
+  colnames(compo_scores)[1:2] = c("PCA1", "PCA2")
+  
+  # 4. Filtrage pour trajectoires 2021–2025
+  lagunes_2021_2025 = scores_df %>%
+    filter(Annee %in% c(2021, 2025)) %>%
+    group_by(ID_LAG) %>%
+    summarise(annees = list(unique(Annee)), .groups = "drop") %>%
+    filter(all(c("2021", "2025") %in% unlist(annees))) %>%
+    pull(ID_LAG)
+  
+  scores_df_filtre = scores_df %>% filter(ID_LAG %in% lagunes_2021_2025)
+  scores_df_filtre = scores_df_filtre %>%
+    mutate(Site_Annee = paste(Site, Annee, sep = "_"))
+  
+  # 5. Ellipses
+  ellipse_data = scores_df_filtre %>%
+    group_by(Site_Annee) %>%
+    filter(n() >= 3) %>%
+    ungroup()
+  
+  centroids = ellipse_data %>%
+    group_by(Site, Annee, Site_Annee) %>%
+    summarise(PCA1 = mean(PCA1), PCA2 = mean(PCA2), .groups = "drop") %>%
+    arrange(Site, Annee)
+  
+  arrows_df = centroids %>%
+    group_by(Site) %>%
+    arrange(Annee) %>%
+    mutate(
+      PCA1_end = lead(PCA1),
+      PCA2_end = lead(PCA2)
+    ) %>%
+    filter(!is.na(PCA1_end)) %>%
+    ungroup()
+  
+  # --- Graphs ---
+  
+  ## Graph 1 : Ellipses par site
+  g1 = ggplot(scores_df, aes(x = PCA1, y = PCA2, color = Site)) +
+    geom_point(size = 1.5) +
+    stat_ellipse(type = "t", level = 0.68, linewidth = 1) +
+    geom_segment(data = compo_scores,
+                 aes(x = 0, y = 0, xend = PCA1, yend = PCA2),
+                 arrow = arrow(length = unit(0.3, "cm")),
+                 color = "black", inherit.aes = FALSE) +
+    geom_text(data = compo_scores,
+              aes(x = PCA1, y = PCA2, label = Compo),
+              color = "black", vjust = -0.5, size = 3, inherit.aes = FALSE) +
+    theme_minimal() +
+    labs(title = paste("PCA -", nom_dataset, "- Ellipses par Site"))
+  
+  ## Graph 2 : Ellipses par année
+  g2 = ggplot(scores_df_filtre, aes(x = PCA1, y = PCA2, color = Annee)) +
+    geom_point(size = 2) +
+    stat_ellipse(type = "t") +
+    geom_segment(data = compo_scores,
+                 aes(x = 0, y = 0, xend = PCA1, yend = PCA2),
+                 arrow = arrow(length = unit(0.2, "cm")),
+                 color = "black", inherit.aes = FALSE) +
+    geom_text(data = compo_scores,
+              aes(x = PCA1, y = PCA2, label = Compo),
+              color = "black", vjust = -0.5, inherit.aes = FALSE) +
+    theme_minimal() +
+    labs(title = paste("PCA -", nom_dataset, "- Ellipses par Année"))
+  
+  ## Graph 3 : Trajectoire par site
+  g3 = ggplot(ellipse_data, aes(x = PCA1, y = PCA2, color = Site)) +
+    geom_point(aes(shape = Annee), size = 2) +
+    stat_ellipse(aes(group = Site_Annee), type = "t") +
+    geom_segment(data = arrows_df,
+                 aes(x = PCA1, y = PCA2, xend = PCA1_end, yend = PCA2_end),
+                 arrow = arrow(type = "closed", length = unit(0.15, "inches")),
+                 linewidth = 1) +
+    theme_minimal() +
+    labs(title = paste("PCA -", nom_dataset, "- Trajectoires temporelles par Site"))
+  
+  ## Graph 4 : Trajectoire par lagune (coloré par année)
+  g4 = ggplot(scores_df_filtre, aes(x = PCA1, y = PCA2)) +
+    geom_path(aes(group = ID_LAG),
+              arrow = arrow(type = "closed", length = unit(0.15, "inches")),
+              color = "grey50", linewidth = 0.8) +
+    geom_point(aes(color = Annee), size = 3) +
+    theme_minimal() +
+    labs(title = paste("PCA -", nom_dataset, "- Trajectoire par Lagune (Années)"))
+  
+  return(list(graph1 = g1, graph2 = g2, graph3 = g3, graph4 = g4))
+}
+
+#Lancer sur mes jeux de données 
 
 
 
+vars_chimique <- c("P2O5_TOT...","AZOTE_TOT.mg.kg.","C.N")  
 
+vars_sol <- c("MO_TOT...","CAILLOUX...","ARGILE...","LIMONS_FINS...","LIMONS_GROSSIERS...","SABLES_FIN...","SABLES_GROSSIERS...")
 
+sites_exclus <- c("BAG_GRA", "HYERES", "VILLEROY")
 
+graphs_chimique <- faire_graphs_pca(
+  data = Chimique,
+  nom_dataset = "Chimique",
+  colonnes_compo = vars_chimique,
+  sites_a_exclure = sites_exclus
+)
+
+graphs_sol <- faire_graphs_pca(
+  data = Sol,
+  nom_dataset = "Sol",
+  colonnes_compo = vars_sol,
+  sites_a_exclure = sites_exclus
+)
+
+# Chimique
+graphs_chimique$graph1  # PCA par site
+graphs_chimique$graph2  # PCA par année
+graphs_chimique$graph3  # Trajectoire temporelle par site
+graphs_chimique$graph4  # Trajectoire par lagune
+
+# Sol
+graphs_sol$graph1
+graphs_sol$graph2
+graphs_sol$graph3
+graphs_sol$graph4
