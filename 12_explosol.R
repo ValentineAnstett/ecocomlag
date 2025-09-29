@@ -6,15 +6,16 @@ Sol = read.csv("Sol_21_25.csv", header = TRUE, sep = ",", dec=",")
 Sol= Sol %>%
   mutate(across(4:14, as.numeric))
 
-Chimique = Sol [, -c(8:14)]
+Chimique = Sol [, -c(4, 8:14)]
 
 
-Type_sol = Sol [, -c(4:7)]
+Type_sol = Sol [, -c(5:7)]
 
-####INTER-SITES####
-#Type de sol 
-Sol_sanslag = Sol [,-3]
-Data = Sol_sanslag [, -c(3:6)]
+####HISTOGRAMMES ----
+
+#Global : Composition du sol 2021-2025  
+Sol_sanslag = Type_sol [,-3]
+Data = Sol_sanslag
 data_long = Data %>%
   pivot_longer(cols = -c(Site, Annee), names_to = "Sol", values_to = "Pourcentage")
 ggplot(data_long, aes(x = Site, y = Pourcentage, fill = Sol)) +
@@ -28,9 +29,9 @@ ggplot(data_long, aes(x = Site, y = Pourcentage, fill = Sol)) +
   ) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1))  # Faire pivoter les noms des lagunes
 
-#Chimie ? 
+#Global : Chimie du sol 2021-2025
 
-Data1 = Sol_sanslag [, -c(7:14)]
+Data1 = Chimique [, -3]
 data_long1 = Data1 %>%
   pivot_longer(cols = -c(Site, Annee), names_to = "Sol", values_to = "Pourcentage")
 ggplot(data_long1, aes(x = Site, y = Pourcentage, fill = Sol)) +
@@ -45,7 +46,7 @@ ggplot(data_long1, aes(x = Site, y = Pourcentage, fill = Sol)) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1))  # Faire pivoter les noms des lagunes
 
 
-#Evolution Azote dans le sol 2019/2025
+#Global : Evolution Azote dans le sol 2019/2025
 
 azote_data = Sol %>%
   select(Site, ID_LAG, Annee, AZOTE_TOT.mg.kg.) %>%
@@ -63,45 +64,13 @@ ggplot(azote_data, aes(x = Azote_2025, y = Azote_2021, color = Site)) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray") +
   theme_minimal()
 
-
-
-
-####INTRA-SITES####
-
-##GGPLOTS##
-#Type de sol 
-Sol_sanslag = Sol[,-1]
-Data_sanslag = Sol_sanslag [, -c(2:4)]
-data_long_sanslag = Data_sanslag %>%
-  pivot_longer(cols = -Site, names_to = "Sol", values_to = "Pourcentage")
-ggplot(data_long_sanslag, aes(x = Site, y = Pourcentage, fill = Sol)) +
-  geom_bar(stat = "identity", position = "stack") +
-  labs(
-    title = "Type de sol par site",
-    x = "Site",
-    y = "Pourcentage (%)",
-    fill = "Sol"
-  ) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))  # Faire pivoter les noms des lagunes
-
-
-##GGPLOTS##
 #POURCENTAGES 
 Sol_pourcentage = Sol[, -c(5,6,7)]
 
 data_long_pourcentage = Sol_pourcentage %>%
   pivot_longer(cols = -c(Annee, Site, ID_LAG), names_to = "Compo_sol", values_to = "Pourcentage")
-##Annes par annees 
-#Sur le meme graph
-ggplot(data_long_pourcentage, aes(x = ID_LAG, y = Pourcentage, fill = Compo_sol)) +
-  geom_bar(stat = "identity", position = "stack") + 
-  facet_grid(Site ~ Annee) +  
-  labs(title = "Composition du sol",
-       x = "LAGUNE", 
-       y = "Pourcentage dans le sol (%)") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-#Graph par annee 
+
+#Composition par site et par années
 sites = unique(data_long_pourcentage$Site)
 annees = unique(data_long_pourcentage$Annee)
 especes = colnames(data_long_pourcentage)[4:ncol(data_long_pourcentage)]
@@ -120,7 +89,7 @@ for (site in sites) {
     print(p)
   }
 }
-#Graphs par site 
+#Graphs par site (les deux années ensemble)
 sites = unique(data_long_pourcentage$Site)
 especes = colnames(data_long_pourcentage)[4:ncol(data_long)]
 
@@ -138,82 +107,65 @@ for (site in sites) {
   print(p)
 }
 
+#Compo chimique par site et par années 
+plot_variable_sol_par_site <- function(data, col_variable, fill_label, fill_color, y_label, titre_general) {
 
-###C/N
-Sol_CARBAZ = Sol[, c(1,2,3,7)]
-
-data_long_CARBAZ = Sol_CARBAZ %>%
-  pivot_longer(cols = -c(Annee, Site, ID_LAG), names_to = "CarboneAzote", values_to = "Valeur")
-#Graphs par site 
-sites = unique(data_long_CARBAZ$Site)
-especes = colnames(data_long_CARBAZ)[4:ncol(data_long_CARBAZ)]
-
-for (site in sites) {
-  data_site = data_long_CARBAZ %>%
-    filter(Site == site)
-  p = ggplot(data_site, aes(x = ID_LAG, y = Valeur, fill = CarboneAzote)) +
-    geom_bar(stat = "identity", position = "stack") +  
-    facet_wrap(~ Annee) +  
-    labs(title = paste("Rapport C/N pour le site", site),
-         x = "LAGUNE", 
-         y = "C/N") +
-    scale_fill_manual(values = (CarboneAzote = "#a6761d")) +
-    theme_minimal() +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1))
-  print(p)
+  df_var <- data %>%
+    select(Annee, Site, ID_LAG, all_of(col_variable))
+  data_long <- df_var %>%
+    pivot_longer(cols = -c(Annee, Site, ID_LAG), 
+                 names_to = fill_label, 
+                 values_to = "Valeur")
+  sites <- unique(data_long$Site)
+  for (site in sites) {
+    data_site <- data_long %>% filter(Site == site)
+    
+    p <- ggplot(data_site, aes(x = ID_LAG, y = Valeur, fill = .data[[fill_label]])) +
+      geom_bar(stat = "identity", position = "stack") +
+      facet_wrap(~ Annee) +
+      labs(
+        title = paste(titre_general, " - Site :", site),
+        x = "LAGUNE",
+        y = y_label
+      ) +
+      scale_fill_manual(values = setNames(fill_color, unique(data_site[[fill_label]]))) +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+    
+    print(p)
+  }
 }
 
+plot_variable_sol_par_site(
+  data = Sol,
+  col_variable = "C.N",  # nom exact de la colonne
+  fill_label = "CarboneAzote",
+  fill_color = "#a6761d",
+  y_label = "C/N",
+  titre_general = "Rapport C/N dans le sol"
+)
 
-#P2O5 -- engrais phosphatés 
+plot_variable_sol_par_site(
+  data = Sol,
+  col_variable = "P2O5_TOT...",  # adapte au nom exact de ta colonne
+  fill_label = "Engrais_phosphates",
+  fill_color = "#1b9e77",
+  y_label = "P2O5 (%)",
+  titre_general = "Pourcentage de P2O5 dans le sol"
+)
 
-Sol_P2O5 = Sol[, c(1,2,3,5)]
+plot_variable_sol_par_site(
+  data = Sol,
+  col_variable = "AZOTE_TOT.mg.kg.",  # nom exact
+  fill_label = "AzoteTotal",
+  fill_color = "#7570b3",
+  y_label = "Azote total (mg/kg)",
+  titre_general = "Quantité d'azote dans le sol"
+)
 
-data_long_P2O5 = Sol_P2O5 %>%
-  pivot_longer(cols = -c(Annee, Site, ID_LAG), names_to = "Engrais_phosphates", values_to = "Pourcentage")
-#Graphs par site 
-sites = unique(data_long_P2O5$Site)
-especes = colnames(data_long_P2O5)[4:ncol(data_long_P2O5)]
 
-for (site in sites) {
-  data_site = data_long_P2O5 %>%
-    filter(Site == site)
-  p = ggplot(data_site, aes(x = ID_LAG, y = Pourcentage, fill = Engrais_phosphates)) +
-    geom_bar(stat = "identity", position = "stack") +  
-    facet_wrap(~ Annee) +  
-    labs(title = paste("Pourcentage de P2O5 dans le sol pour le site", site),
-         x = "LAGUNE", 
-         y = "P2O5 (%)") +
-    scale_fill_manual(values = (Engrais_phosphates = "#1b9e77")) +
-    theme_minimal() +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1))
-  print(p)
-}
 
-#Azote Tot 
-Sol_N = Sol[, c(1,2,3,6)]
-
-data_long_N = Sol_N %>%
-  pivot_longer(cols = -c(Annee, Site, ID_LAG), names_to = "AzoteTotal", values_to = "mg_kg")
-#Graphs par site 
-sites = unique(data_long_N$Site)
-especes = colnames(data_long_N)[4:ncol(data_long_N)]
-
-for (site in sites) {
-  data_site = data_long_N %>%
-    filter(Site == site)
-  p = ggplot(data_site, aes(x = ID_LAG, y = mg_kg, fill = AzoteTotal)) +
-    geom_bar(stat = "identity", position = "stack") +  
-    facet_wrap(~ Annee) +  
-    labs(title = paste("Quantité d'azote dans le sol sur le site", site),
-         x = "LAGUNE", 
-         y = "N (mg/kg)") +
-    scale_fill_manual(values = (Engrais_phosphates = "#7570b3")) +
-    theme_minimal() +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1))
-  print(p)
-}
-
-##NUAGE DE POINT = Evolution par site et par composés ###
+####NUAGE DE POINT = Détails site par site ----
 
 variables = c("MO_TOT...","P2O5_TOT...","AZOTE_TOT.mg.kg.","C.N","CAILLOUX...","ARGILE...","LIMONS_FINS...","LIMONS_GROSSIERS...","SABLES_FIN...","SABLES_GROSSIERS...")
 range_limits = range(c(df_site[[col_2025]], df_site[[col_2021]]), na.rm = TRUE)
@@ -263,7 +215,7 @@ for (var in variables) {
   }
 }
 
-####NUAGE DE POINTS ####
+####NUAGE DE POINTS : tous les sites regroupés ----
 
 Compo = colnames(Sol)[!(colnames(Sol) %in% c("Annee", "Site", "ID_LAG"))]
 
@@ -306,11 +258,9 @@ for (comp in Compo) {
 
 
 #### ANALYSE MULTI ####
-##Type_SOL 
-
 #PCA : Creation d'une fonction pour y appliquer les differents dataset 
 
-faire_graphs_pca <- function(data, nom_dataset, colonnes_compo, sites_a_exclure = NULL) {
+faire_graphs_pca = function(data, nom_dataset, colonnes_compo, sites_a_exclure = NULL) {
   
   data = data %>%
     filter(!(Site %in% sites_a_exclure)) %>%
@@ -425,23 +375,19 @@ faire_graphs_pca <- function(data, nom_dataset, colonnes_compo, sites_a_exclure 
 
 #Lancer sur mes jeux de données 
 
+vars_chimique = c("P2O5_TOT...","AZOTE_TOT.mg.kg.","C.N")  
+vars_sol = c("MO_TOT...","CAILLOUX...","ARGILE...","LIMONS_FINS...","LIMONS_GROSSIERS...","SABLES_FIN...","SABLES_GROSSIERS...")
+sites_exclus = c("BAG_GRA", "HYERES", "VILLEROY")
 
-
-vars_chimique <- c("P2O5_TOT...","AZOTE_TOT.mg.kg.","C.N")  
-
-vars_sol <- c("MO_TOT...","CAILLOUX...","ARGILE...","LIMONS_FINS...","LIMONS_GROSSIERS...","SABLES_FIN...","SABLES_GROSSIERS...")
-
-sites_exclus <- c("BAG_GRA", "HYERES", "VILLEROY")
-
-graphs_chimique <- faire_graphs_pca(
+graphs_chimique = faire_graphs_pca(
   data = Chimique,
   nom_dataset = "Chimique",
   colonnes_compo = vars_chimique,
   sites_a_exclure = sites_exclus
 )
 
-graphs_sol <- faire_graphs_pca(
-  data = Sol,
+graphs_sol = faire_graphs_pca(
+  data = Type_sol,
   nom_dataset = "Sol",
   colonnes_compo = vars_sol,
   sites_a_exclure = sites_exclus
@@ -462,3 +408,53 @@ graphs_sol$graph4
 
 
 ####PERMANOVA####
+
+faire_permanova = function(data, colonnes_compo, facteurs, sites_a_exclure = NULL) {
+  # Exclure sites si besoin
+  data = data %>%
+    filter(!(Site %in% sites_a_exclure)) %>%
+    mutate(across(all_of(facteurs), as.factor))  # S'assurer que les facteurs sont bien en facteur
+  
+  # Sélection des variables de composition
+  df_compo = data %>%
+    select(all_of(colonnes_compo)) %>%
+    mutate(across(everything(), as.numeric)) %>%
+    select(where(~ sd(., na.rm = TRUE) > 0)) %>%
+    filter(rowSums(is.na(.)) < ncol(.))
+  
+  # Métadonnées pour le design
+  df_meta = data %>% 
+    filter(rowSums(is.na(select(., all_of(colonnes_compo)))) < ncol(.)) %>%
+    select(all_of(facteurs))
+  
+  # Calcul des distances (par exemple, euclidiennes ou Bray-Curtis selon le cas)
+  distance_matrix = vegdist(df_compo, method = "euclidean")  # ou "bray"
+  
+  # PERMANOVA avec adonis2
+  formule = as.formula(paste("distance_matrix ~", paste(facteurs, collapse = " + ")))
+  
+  permanova_result = adonis2(formule, data = df_meta, permutations = 999)
+  
+  return(permanova_result)
+}
+
+
+#Chimique 
+resultats_permanova_chimique <- faire_permanova(
+  data = Chimique,
+  colonnes_compo = vars_chimique,
+  facteurs = c("Annee", "Site"),
+  sites_a_exclure = sites_exclus
+)
+
+print(resultats_permanova_chimique)
+
+#Structure du sol 
+resultats_permanova_sol <- faire_permanova(
+  data = Sol,
+  colonnes_compo = vars_sol,
+  facteurs = c("Annee", "Site"),
+  sites_a_exclure = sites_exclus
+)
+
+print(resultats_permanova_sol)
