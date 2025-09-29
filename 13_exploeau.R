@@ -88,8 +88,6 @@ Hydro_germi_clean = Hydro_germi_acp[lignes_valides, ]
 
 acp = rda(var_hydro_clean, scale = TRUE)
 
-
-
 scores_sites <- scores(acp, display = "sites") %>%
   as.data.frame() %>%
   bind_cols(Hydro_germi_clean %>% select(site, code, annee))
@@ -284,5 +282,9 @@ ggplot(scores_sites, aes(x = PC1, y = PC2)) +
     x = paste0("PC1 (", round(summary(acp)$cont$importance[2,1]*100,1), "%)"),
     y = paste0("PC2 (", round(summary(acp)$cont$importance[2,2]*100,1), "%)")
   )
+
+
+####PERMANOVA####
+
 
 
