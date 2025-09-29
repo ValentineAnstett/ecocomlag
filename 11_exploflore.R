@@ -389,8 +389,8 @@ ggplot(scores_df_triche, aes(x = NMDS1, y = NMDS2, color = Site)) +
   geom_segment(data = species_scores, aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
                arrow = arrow(length = unit(0.2, "cm")),
                color = "black", inherit.aes = FALSE) +
-  geom_text(data = species_scores, aes(x = NMDS1, y = NMDS2, label = Species),
-            color = "black", vjust = -0.5, inherit.aes = FALSE) +
+  geom_text_repel(data = species_scores, aes(x = NMDS1, y = NMDS2, label = Species),
+            color = "black", vjust = -0.5, inherit.aes = FALSE, max.overlaps = 15) +
   
   geom_hline(yintercept = 0, color = "black", linewidth = 0.5, linetype = "dotted") +
   geom_vline(xintercept = 0, color = "black", linewidth = 0.5, linetype = "dotted") +
@@ -427,8 +427,8 @@ ggplot(scores_df_triche_filtre, aes(x = NMDS1, y = NMDS2, color = Annee)) +
   geom_segment(data = species_scores, aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
                arrow = arrow(length = unit(0.2, "cm")),
                color = "black", inherit.aes = FALSE) +
-  geom_text(data = species_scores, aes(x = NMDS1, y = NMDS2, label = Species),
-            color = "black", vjust = -0.5, inherit.aes = FALSE) +
+  geom_text_repel(data = species_scores, aes(x = NMDS1, y = NMDS2, label = Species),
+            color = "black", vjust = -0.5, inherit.aes = FALSE, max.overlaps = 15) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
   geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
   geom_segment(data = fleche, aes(x = x, y = y, xend = xend, yend = yend),
