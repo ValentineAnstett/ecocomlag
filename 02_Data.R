@@ -80,7 +80,9 @@ setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Pro
 Hydro = read.csv("Hydro_Finale_19_23_25.csv", header = TRUE, sep = ",", dec=",")
 
 Hydro = Hydro %>%
-  mutate(date_releve = as.Date(date_releve, format = "%Y-%m-%d"))
+  mutate(hauteur_eau = ifelse(eau == "Non", 0, hauteur_eau))
+Hydro = Hydro %>%
+  mutate(hauteur_eau = ifelse(eau == "non", 0, hauteur_eau))
 
 
 #Ne garder que les sites suivis mensuellement en 2020+2023+2025
@@ -107,6 +109,8 @@ codes_a_garder = c(
 Hydro_mens = Hydro[Hydro$code %in% codes_a_garder, ]
 
 #Format date (retirer le jour)
+Hydro_mens = Hydro_mens %>%
+  mutate(date_releve = as.Date(date_releve, format = "%Y-%m-%d"))
 Hydro_mens$date_releve = as.Date(format(Hydro_mens$date_releve, "%Y-%m-01"))
 Hydro_mens = Hydro_mens[,-c(3,7,13)]
 
