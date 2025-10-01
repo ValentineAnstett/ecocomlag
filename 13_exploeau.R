@@ -1,4 +1,4 @@
-###2020 - 2025 : date unique 
+###2020 - 2025 : date unique ----
 #Import dataset 
 getwd()
 setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_hydro")
@@ -268,8 +268,121 @@ ggplot(scores_sites, aes(x = PC1, y = PC2)) +
     y = paste0("PC2 (", round(summary(acp)$cont$importance[2,2]*100,1), "%)")
   )
 
+###2019-2025 : suivis mensuels ----
+# Import dataset
+setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_hydro")
+Hydro_mens <- read.csv("Hydro_mens.csv", header = TRUE, sep = ",", dec = ".")
 
-####PERMANOVA####
+
+vars_hydro = c("turbidite", "temperature", "hauteur_eau", "salinite", "conductivite")
+
+Hydro_mens = Hydro_mens %>%
+  mutate(across(all_of(vars_hydro), ~ str_replace_all(., ",", "."))) %>%
+  mutate(across(all_of(vars_hydro), ~ as.numeric(as.character(.))))  # Remplacer les virgules par des points, puis convertir en numérique
+
+# Gérer les NA : 
+# si hauteur_eau = 0 et variable NA, remplacer NA par 0, sinon garder variable
+Hydro_mens = Hydro_mens %>%
+  mutate(across(all_of(vars_hydro), ~ ifelse(hauteur_eau == 0 & is.na(.), 0, .)))
+
+# Création des variables date, mois, année calendaire et hydrologique
+Hydro_mens = Hydro_mens %>%
+  mutate(
+    date = as.Date(paste0(date_releve, "-01")),
+    mois = month(date),
+    annee_cal = year(date),
+    annee_hydro = if_else(mois >= 8, annee_cal + 1, annee_cal), # année hydrologique : mois août (8) devient l'année suivante
+    mois_hydro = if_else(mois >= 8, mois - 7, mois + 5) # mois dans l'année hydrologique : août = 1, ..., juillet = 12
+  )
+
+# Supprimer les lignes où il y a NA dans une des variables hydro
+Hydro_mens = Hydro_mens %>%
+  filter(if_all(all_of(vars_hydro), ~ !is.na(.)))
+
+### Visualisation individuelle par code et variable ----
+
+visualize_variable = function(data, code_sel, var_sel) {
+  df_plot <- data %>%
+    filter(code == code_sel) %>%
+    filter(!is.na(.data[[var_sel]])) %>%
+    arrange(annee_hydro, mois_hydro)
+  
+  ggplot(df_plot, aes(x = mois_hydro, y = .data[[var_sel]], color = factor(annee_hydro), group = annee_hydro)) +
+    geom_line() +
+    geom_point() +
+    scale_x_continuous(
+      breaks = 1:12,
+      labels = month.abb[c(8:12, 1:7)]
+    ) +
+    labs(
+      title = paste("Variation annuelle de", var_sel, "pour le site", code_sel),
+      x = "Mois hydrologique (Août = 1)",
+      y = var_sel,
+      color = "Année hydrologique"
+    ) +
+    theme_minimal()
+}
+codes = unique(Hydro_mens$code)
+variables = c("turbidite", "temperature", "hauteur_eau", "salinite", "conductivite")
+
+for (code_i in codes) {
+  for (var_i in variables) {
+    p = visualize_variable(Hydro_mens, code_sel = code_i, var_sel = var_i)
+    if (!is.null(p)) {
+      print(p)  # Affiche dans la console (utile pour explorer visuellement)
+    }
+  }
+}
 
 
+#Rassembler par site 
+# Transformer en format long
+Hydro_long = Hydro_mens %>%
+  pivot_longer(
+    cols = all_of(vars_hydro),
+    names_to = "variable",
+    values_to = "value"
+  )
+# Calcul des médianes et quantiles par site, année hydrologique, mois, variable
+summary_site = Hydro_long %>%
+  group_by(site, annee_hydro, mois_hydro, variable) %>%
+  summarise(
+    median_val = median(value, na.rm = TRUE),
+    q25 = quantile(value, 0.25, na.rm = TRUE),
+    q75 = quantile(value, 0.75, na.rm = TRUE),
+    .groups = "drop"
+  )
+#Fonction de plot 
+plot_site_variable <- function(df_summary, site_sel, var_sel) {
+  df_plot <- df_summary %>%
+    filter(site == site_sel, variable == var_sel)
+  
+  if (nrow(df_plot) == 0) {
+    return(NULL)
+  }
+  
+  ggplot(df_plot, aes(x = mois_hydro)) +
+    geom_point(aes(y = median_val, color = factor(annee_hydro)), size = 3) +
+    geom_ribbon(aes(ymin = q25, ymax = q75, fill = factor(annee_hydro)), alpha = 0.2) +
+    scale_x_continuous(breaks = 1:12, labels = month.abb[c(8:12, 1:7)]) +
+    labs(
+      title = paste0("Variation de ", var_sel, " - Site: ", site_sel),
+      x = "Mois hydrologique (Août = 1)",
+      y = var_sel,
+      color = "Année hydrologique",
+      fill = "Année hydrologique"
+    ) +
+    theme_minimal()
+}
+#Afficher
+sites = unique(summary_site$site)
+variables = unique(summary_site$variable)
 
+for (site_i in sites) {
+  for (var_i in variables) {
+    p <- plot_site_variable(summary_site, site_i, var_i)
+    if (!is.null(p)) {
+      print(p)
+    }
+  }
+}
