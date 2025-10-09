@@ -230,5 +230,10 @@ Macro_Ptscontacts_2025 = Macro_Ptscontacts_2025 %>%
 #Megre les 2 frames 
 Macro_Ptscontacts = bind_rows(Macro_Ptscontacts_2020, Macro_Ptscontacts_2025)
 
+
+#Ajouter les SIte 
+Macro_Ptscontacts = Macro_Ptscontacts %>%
+  mutate(Site = sub("_[^_]+$", "", LAGUNE))
+Macro_Ptscontacts = Macro_Ptscontacts[, c(1, 21, 2:20)]
 #Enregistrer
 write.csv(Macro_Ptscontacts, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_Macro/Macro_Ptscontacts.csv", row.names = FALSE)
