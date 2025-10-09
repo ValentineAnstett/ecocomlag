@@ -78,6 +78,8 @@ write.csv(Hydro_germi, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/
 getwd()
 setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_hydro")
 Hydro = read.csv("Hydro_Finale_19_23_25.csv", header = TRUE, sep = ",", dec=",")
+Hydro$date_releve =  as.Date(Hydro$date_releve)
+Hydro$date_releve = as.Date(format(Hydro$date_releve, "%Y-%m-01"))
 
 Hydro = Hydro %>%
   mutate(hauteur_eau = ifelse(eau == "Non", 0, hauteur_eau))
@@ -108,10 +110,8 @@ codes_a_garder = c(
 
 Hydro_mens = Hydro[Hydro$code %in% codes_a_garder, ]
 
-#Format date (retirer le jour)
-Hydro_mens = Hydro_mens %>%
-  mutate(date_releve = as.Date(date_releve, format = "%Y-%m-%d"))
-Hydro_mens$date_releve = as.Date(format(Hydro_mens$date_releve, "%Y-%m-01"))
+
+
 Hydro_mens = Hydro_mens[,-c(3,7,13)]
 
 # Importer dans processed 
@@ -119,3 +119,116 @@ write.csv(Hydro_mens, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/A
 
 
 
+#################################################################
+########### DATAFRAME Indices de présence macrophytes ##########
+
+###  Data 2020 ----
+getwd()
+setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Macrophytes_/Data/Raw")
+Macro2020 = read_xls("MACRO_occur_03.21.xls")
+
+Macro2020_clean = Macro2020 [,-c(2,3,4,5,34,35)]
+Macro2020_clean = Macro2020_clean %>%
+  select(-ends_with("_REL_COV"))
+colnames(Macro2020_clean) = sub("_ABS_COV$", "", colnames(Macro2020_clean))
+Macro2020_clean = Macro2020_clean %>%
+  mutate(annee = 2020)
+Macro2020_clean = Macro2020_clean[, c(16, 1:15)]
+Macro2020_clean = Macro2020_clean %>%
+  mutate(across(-c(1, 2), ~{
+    x_num <- suppressWarnings(as.numeric(trimws(.)))
+    replace_na(x_num, 0)
+  }))
+
+df_long_2020 = Macro2020_clean %>%
+  pivot_longer(-c(annee,LAGUNE), names_to = "Espece", values_to = "Recouvrement")
+
+df_result_2020 = df_long_2020 %>%
+  group_by(annee,LAGUNE, Espece) %>%
+  summarise(
+    Frequence = sum(Recouvrement > 0),
+    Recouvrement_Total = sum(Recouvrement),
+    .groups = "drop"
+  )
+print(df_result_2020)
+
+Macro_Ptscontacts_2020 = df_result_2020 %>%
+  mutate(indice_sp = Frequence / 20)
+
+#Formater comme 2025 
+
+Macro_Ptscontacts_2020$LAGUNE = gsub("_(\\d)$", "_0\\1", Macro_Ptscontacts_2020$LAGUNE)  # Ajouter un zéro si un seul chiffre après le dernier "_"
+Macro_Ptscontacts_2020$LAGUNE = gsub("_(\\d{2})$", "_\\1", Macro_Ptscontacts_2020$LAGUNE) # Assurez-vous qu'il n'y ait pas de modification si deux chiffres
+Macro_Ptscontacts_2020$LAGUNE = gsub("FOS_CAB", "FOS_REL", Macro_Ptscontacts_2020$LAGUNE) # Remplacer FOS_CAB par FOS_REL dans la colonne LAGUNE
+
+
+###  Data 2023
+
+
+
+
+###  Data 2025 
+getwd()
+setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Macrophytes_/Data/Raw")
+Macro2025 = read_xlsx("macrophytes_2025.xlsx")
+
+Macro2025_clean = Macro2025 [,-c(3,4)]
+colnames(Macro2025_clean) = sub("_ABS_COV$", "", colnames(Macro2025_clean))
+
+df_long_2025 = Macro2025_clean %>%
+  pivot_longer(-c(annee,LAGUNE), names_to = "Espece", values_to = "Recouvrement")
+
+df_result_2025 = df_long_2025 %>%
+  group_by(annee,LAGUNE, Espece) %>%
+  summarise(
+    Frequence = sum(Recouvrement > 0),
+    Recouvrement_Total = sum(Recouvrement),
+    .groups = "drop"
+  )
+print(df_result_2025)
+
+Macro_Ptscontacts_2025 = df_result_2025 %>%
+  mutate(indice_sp = Frequence / 20)
+
+
+###  Merge les 3 frames
+
+#Remettre dans le bon sens 
+Macro_Ptscontacts_2025 = Macro_Ptscontacts_2025 %>%
+  select(annee, LAGUNE, Espece, indice_sp) %>%  
+  pivot_wider(
+    names_from = Espece,
+    values_from = indice_sp
+  )
+Macro_Ptscontacts_2020 = Macro_Ptscontacts_2020 %>%
+  select(annee, LAGUNE, Espece, indice_sp) %>%  
+  pivot_wider(
+    names_from = Espece,
+    values_from = indice_sp
+  )
+
+#Lisser les colonnes espèces 
+all_cols = union(names(Macro_Ptscontacts_2020), names(Macro_Ptscontacts_2025))
+
+add_missing_cols = function(df, all_cols) {
+  missing_cols = setdiff(all_cols, names(df))
+  if (length(missing_cols) > 0) {
+    df[missing_cols] <- 0
+  }
+  df = df %>% select(all_of(all_cols))
+  return(df)
+}
+
+Macro_Ptscontacts_2020 = add_missing_cols(Macro_Ptscontacts_2020, all_cols)
+Macro_Ptscontacts_2025 = add_missing_cols(Macro_Ptscontacts_2025, all_cols)
+
+Macro_Ptscontacts_2020 = Macro_Ptscontacts_2020 %>%
+  select(1, 2, sort(names(.)[-c(1, 2)]))
+Macro_Ptscontacts_2025 = Macro_Ptscontacts_2025 %>%
+  select(1, 2, sort(names(.)[-c(1, 2)]))
+
+#Megre les 2 frames 
+Macro_Ptscontacts = bind_rows(Macro_Ptscontacts_2020, Macro_Ptscontacts_2025)
+
+#Enregistrer
+write.csv(Macro_Ptscontacts, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_Macro/Macro_Ptscontacts.csv", row.names = FALSE)
