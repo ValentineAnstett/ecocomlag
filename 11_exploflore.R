@@ -120,7 +120,13 @@ ggplot(coord_ind, aes(x = Dim.1, y = Dim.2, color = Site)) +
   theme_minimal() +
   theme(
     panel.border = element_rect(color = "black", fill = NA),
-    axis.line = element_line(color = "black")
+    axis.line = element_line(color = "black"),
+    plot.title = element_text(size = 40, face = "bold"),       
+    axis.title = element_text(size = 30),                     
+    axis.text = element_text(size = 24),                      
+    legend.title = element_text(size = 28),                    
+    legend.text = element_text(size = 24),                     
+    strip.text = element_text(size = 28), 
   )
 
 
@@ -176,6 +182,94 @@ ggplot(coord_ind %>% filter(!LAGUNE %in% c("PAL_VIL_07", "PAL_VIL_06","ORB_MAI_0
     legend.text = element_text(size = 24),                     
     strip.text = element_text(size = 28),                     
   )
+
+
+##Graph avec polygone par année 
+
+ggplot(coord_ind %>% filter(!LAGUNE %in% c("PAL_VIL_07", "PAL_VIL_06","ORB_MAI_04","ORB_MAI_05")), 
+       aes(x = Dim.1, y = Dim.2, color = as.factor(annee))) +
+  geom_point(size = 3, alpha = 0.8) +
+  geom_polygon(
+    data = (coord_ind %>% 
+              filter(!LAGUNE %in% c("PAL_VIL_07", "PAL_VIL_06","ORB_MAI_04","ORB_MAI_05")) %>% 
+              group_by(annee) %>% group_modify(~get_hull(.x))),
+    aes(x = Dim.1, y = Dim.2, fill = as.factor(annee), group = annee),
+    alpha = 0.15, color = NA, inherit.aes = FALSE
+  ) +
+  geom_segment(
+    data = coord_var, aes(x = 0, y = 0, xend = Dim.1, yend = Dim.2),
+    arrow = arrow(length = unit(0.2, "cm")), color = "black", inherit.aes = FALSE
+  ) +
+  geom_text_repel(
+    data = coord_var, aes(x = Dim.1, y = Dim.2, label = Espece),
+    color = "black", size = 6, inherit.aes = FALSE, max.overlaps = 20
+  ) +
+  geom_hline(yintercept = 0, linetype = "dotted", color = "grey40") +
+  geom_vline(xintercept = 0, linetype = "dotted", color = "grey40") +
+  labs(
+    title = "ACP sur données transformées Hellinger\navec lagunes colorées par année et flèches espèces",
+    x = "Dimension 1",
+    y = "Dimension 2",
+    color = "Année", fill = "Année"
+  ) +
+  scale_color_manual(values = couleurs_annee) +
+  scale_fill_manual(values = couleurs_annee) +
+  theme_minimal() +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA),
+    axis.line = element_line(color = "black"),
+    plot.title = element_text(size = 40, face = "bold"),
+    axis.title = element_text(size = 30),
+    axis.text = element_text(size = 24),
+    legend.title = element_text(size = 28),
+    legend.text = element_text(size = 24),
+    strip.text = element_text(size = 28),
+  )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 #### EXPLO INTER-SITES ####
 #Existe-il une difference entre les sites ? 
