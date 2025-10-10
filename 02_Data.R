@@ -1,4 +1,6 @@
-####DATA HYDRO GERMI####
+#################################################################
+##################### DATAFRAME Hydro avril ####################
+################################################################
 getwd()
 setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_hydro")
 Hydro = read.csv("Hydro_Finale_19_23_25.csv", header = TRUE, sep = ",", dec=",")
@@ -72,52 +74,48 @@ Hydro_germi = Hydro_germi %>%
 # Importer dans processed 
 write.csv(Hydro_germi, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_hydro/Hydro_germi.csv", row.names = FALSE)
 
-
-
-####DATA HYDRO MENSUELLE####
+#################################################################
+######################### DATAFRAME Sol ########################
+################################################################
 getwd()
-setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_hydro")
-Hydro = read.csv("Hydro_Finale_19_23_25.csv", header = TRUE, sep = ",", dec=",")
-Hydro$date_releve =  as.Date(Hydro$date_releve)
-Hydro$date_releve = as.Date(format(Hydro$date_releve, "%Y-%m-01"))
+setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Sol/Data/Processed")
+Sol = read.csv("Sol_21_25.csv", header = TRUE, sep = ",", dec=",")
 
-Hydro = Hydro %>%
-  mutate(hauteur_eau = ifelse(eau == "Non", 0, hauteur_eau))
-Hydro = Hydro %>%
-  mutate(hauteur_eau = ifelse(eau == "non", 0, hauteur_eau))
+#Renommer PCA_CHA 
+Sol = Sol %>%
+  mutate(ID_LAG = recode(ID_LAG,
+                         "PCA_CHA_01" = "PCA_CAP_06",
+                         "PCA_CHA_03" = "PCA_CAP_08",
+                         "PCA_CHA_05" = "PCA_CAP_10"))
+Sol = Sol %>%
+  filter(!(ID_LAG %in% c("PCA_CHA_02", "PCA_CHA_04")))
 
+#Ajouter les SIte 
+Sol = Sol %>%
+  mutate(Site = sub("_[^_]+$", "", ID_LAG))
+Sol = Sol[, c(1, 21, 2:20)]
 
-#Ne garder que les sites suivis mensuellement en 2020+2023+2025
-codes_a_garder = c(
-  # SIG_GSA
-  "SIG_GSA_01", "SIG_GSA_04", "SIG_GSA_06", "SIG_GSA_07", "SIG_GSA_08", "SIG_GSA_09", "SIG_GSA_10",
-  
-  # ORB_ORP
-  "ORB_ORP_01", "ORB_ORP_03", "ORB_ORP_05", "ORB_ORP_06", "ORB_ORP_08",
-  
-  # BAG_PET
-  "BAG_PET_01", "BAG_PET_02", "BAG_PET_03", "BAG_PET_04", "BAG_PET_05", "BAG_PET_06", "BAG_PET_07", "BAG_PET_08", "BAG_PET_11",
-  
-  # EOR_MOT
-  "EOR_MOT_04", "EOR_MOT_05", "EOR_MOT_06", "EOR_MOT_07", "EOR_MOT_08", "EOR_MOT_10",
-  
-  # GCA_RNC
-  "GCA_RNC_01", "GCA_RNC_03", "GCA_RNC_06", "GCA_RNC_07", "GCA_RNC_08", "GCA_RNC_09", "GCA_RNC_10",
-  
-  # FOS_REL
-  "FOS_REL_05", "FOS_REL_07", "FOS_REL_08", "FOS_REL_09", "FOS_REL_10"
-)
+#Trier les sites
+sites_a_exclure = c("BPA_PIS", "BAG_GRA", "CAN_NAZ", "HYE_VIE", "THA_SET")
+Sol = Sol %>%
+  filter(!(Site %in% sites_a_exclure))
 
-Hydro_mens = Hydro[Hydro$code %in% codes_a_garder, ]
+# Regrouper Limons et sables 
+Sol$LIMONS = Sol$LIMONS_FINS + Sol$LIMONS_GROSSIERS 
 
+Sol$SABLES = Sol$SABLES_FIN + Sol$SABLES_GROSSIERS
+
+#Supprimer les colonnes inutiles 
+Sol = Sol[, -c(10:13)]
+
+#Mettre 2020 à la place de 2021 pour fit les autres dataframe 
+Sol$Annee[Sol$Annee == 2021] = 2020
 
 
-Hydro_mens = Hydro_mens[,-c(3,7,13)]
 
-# Importer dans processed 
-write.csv(Hydro_mens, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_hydro/Hydro_mens.csv", row.names = FALSE)
-
-
+#################################################################
+########## DATAFRAME Variables Environnementales ################
+################################################################
 
 #################################################################
 ########### DATAFRAME Indices de présence macrophytes ##########
@@ -169,7 +167,7 @@ Macro_Ptscontacts_2020$LAGUNE = gsub("FOS_CAB", "FOS_REL", Macro_Ptscontacts_202
 
 
 
-###  Data 2025 
+###  Data 2025 ----
 getwd()
 setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Macrophytes_/Data/Raw")
 Macro2025 = read_xlsx("macrophytes_2025.xlsx")
@@ -257,3 +255,72 @@ Macro_Ptscontacts = Macro_Ptscontacts %>%
 
 #Enregistrer
 write.csv(Macro_Ptscontacts, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_Macro/Macro_Ptscontacts.csv", row.names = FALSE)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+####DATA HYDRO MENSUELLE####
+getwd()
+setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_hydro")
+Hydro = read.csv("Hydro_Finale_19_23_25.csv", header = TRUE, sep = ",", dec=",")
+Hydro$date_releve =  as.Date(Hydro$date_releve)
+Hydro$date_releve = as.Date(format(Hydro$date_releve, "%Y-%m-01"))
+
+Hydro = Hydro %>%
+  mutate(hauteur_eau = ifelse(eau == "Non", 0, hauteur_eau))
+Hydro = Hydro %>%
+  mutate(hauteur_eau = ifelse(eau == "non", 0, hauteur_eau))
+
+
+#Ne garder que les sites suivis mensuellement en 2020+2023+2025
+codes_a_garder = c(
+  # SIG_GSA
+  "SIG_GSA_01", "SIG_GSA_04", "SIG_GSA_06", "SIG_GSA_07", "SIG_GSA_08", "SIG_GSA_09", "SIG_GSA_10",
+  
+  # ORB_ORP
+  "ORB_ORP_01", "ORB_ORP_03", "ORB_ORP_05", "ORB_ORP_06", "ORB_ORP_08",
+  
+  # BAG_PET
+  "BAG_PET_01", "BAG_PET_02", "BAG_PET_03", "BAG_PET_04", "BAG_PET_05", "BAG_PET_06", "BAG_PET_07", "BAG_PET_08", "BAG_PET_11",
+  
+  # EOR_MOT
+  "EOR_MOT_04", "EOR_MOT_05", "EOR_MOT_06", "EOR_MOT_07", "EOR_MOT_08", "EOR_MOT_10",
+  
+  # GCA_RNC
+  "GCA_RNC_01", "GCA_RNC_03", "GCA_RNC_06", "GCA_RNC_07", "GCA_RNC_08", "GCA_RNC_09", "GCA_RNC_10",
+  
+  # FOS_REL
+  "FOS_REL_05", "FOS_REL_07", "FOS_REL_08", "FOS_REL_09", "FOS_REL_10"
+)
+
+Hydro_mens = Hydro[Hydro$code %in% codes_a_garder, ]
+
+
+
+Hydro_mens = Hydro_mens[,-c(3,7,13)]
+
+# Importer dans processed 
+write.csv(Hydro_mens, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_hydro/Hydro_mens.csv", row.names = FALSE)
+
