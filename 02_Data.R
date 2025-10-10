@@ -121,6 +121,8 @@ write.csv(Hydro_mens, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/A
 
 #################################################################
 ########### DATAFRAME Indices de présence macrophytes ##########
+################################################################
+
 
 ###  Data 2020 ----
 getwd()
@@ -230,10 +232,28 @@ Macro_Ptscontacts_2025 = Macro_Ptscontacts_2025 %>%
 #Megre les 2 frames 
 Macro_Ptscontacts = bind_rows(Macro_Ptscontacts_2020, Macro_Ptscontacts_2025)
 
+#Renommer PCA_CHA 
+Macro_Ptscontacts = Macro_Ptscontacts %>%
+  mutate(LAGUNE = recode(LAGUNE,
+                       "PCA_CHA_01" = "PCA_CAP_06",
+                       "PCA_CHA_03" = "PCA_CAP_08",
+                       "PCA_CHA_05" = "PCA_CAP_10"))
+
+Macro_Ptscontacts = Macro_Ptscontacts %>%
+  filter(!(LAGUNE %in% c("PCA_CHA_02", "PCA_CHA_04")))
 
 #Ajouter les SIte 
 Macro_Ptscontacts = Macro_Ptscontacts %>%
   mutate(Site = sub("_[^_]+$", "", LAGUNE))
 Macro_Ptscontacts = Macro_Ptscontacts[, c(1, 21, 2:20)]
+
+#Trier les sites
+
+sites_a_exclure = c("BPA_PIS", "BAG_GRA", "CAN_NAZ", "HYE_VIE", "THA_SET")
+Macro_Ptscontacts = Macro_Ptscontacts %>%
+  filter(!(Site %in% sites_a_exclure))
+
+
+
 #Enregistrer
 write.csv(Macro_Ptscontacts, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_Macro/Macro_Ptscontacts.csv", row.names = FALSE)
