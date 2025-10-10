@@ -7,6 +7,7 @@ Macro_Ptscontacts = Macro_Ptscontacts %>%
   filter(!(LAGUNE %in% c("PAL_VIL_07", "PAL_VIL_06","ORB_MAI_04","ORB_MAI_05")))
 
 #Permanova 
+
 especes = Macro_Ptscontacts[, 4:ncol(Macro_Ptscontacts)]
 especes_clean = especes
 especes_clean[is.na(especes_clean)] = 0
@@ -22,6 +23,25 @@ print(permanova_macro_global_result)
 
 permanova_macro_details_result = adonis2(dist_mat ~ annee + Site + LAGUNE, data = data_clean, by = "terms", permutations = 999)
 print(permanova_macro_details_result)
+
+
+#Verifier la dispersion 
+
+disp <- betadisper(dist_mat, data_clean$Site)
+anova(disp)    # p > 0.05 → OK : ici non OK == signal dû a différence dans  dispersion (variabilité interne) entre sites, pas uniquement à une différence réelle de composition.
+plot(disp) 
+
+
+
+disp_lagune <- betadisper(dist_mat, data_clean$LAGUNE)
+anova(disp_lagune)
+
+disp_annee <- betadisper(dist_mat, data_clean$annee)
+anova(disp_annee)
+
+
+
+
 #Clustering 
 
 
