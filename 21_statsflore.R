@@ -162,4 +162,217 @@ ggplot(df_long, aes(x = Espece, y = Abondance, fill = as.factor(Annee))) +
 #Clustering 
 
 
-#TBI ? 
+###TBI----
+
+Macro_T1 <- Macro_Ptscontacts %>% filter(Annee == 2020) %>% arrange(ID_LAG)
+Macro_T2 <- Macro_Ptscontacts %>% filter(Annee == 2025) %>% arrange(ID_LAG)
+# Verifeir que LAG communes 
+ID_communs <- intersect(Macro_T1$ID_LAG, Macro_T2$ID_LAG)
+
+Macro_T1 <- Macro_T1 %>% filter(ID_LAG %in% ID_communs) %>% arrange(ID_LAG)
+Macro_T2 <- Macro_T2 %>% filter(ID_LAG %in% ID_communs) %>% arrange(ID_LAG)
+
+#Création des matrices d'especes 
+especes_T1 <- Macro_T1 %>% select(-Annee, -Site, -ID_LAG)
+especes_T2 <- Macro_T2 %>% select(-Annee, -Site, -ID_LAG)
+rownames(especes_T1) <- Macro_T1$ID_LAG
+rownames(especes_T2) <- Macro_T2$ID_LAG
+
+#Nettoyage 
+non_vides <- which(rowSums(especes_T1) != 0 & rowSums(especes_T2) != 0)
+
+especes_T1 <- especes_T1[non_vides, ]
+especes_T2 <- especes_T2[non_vides, ]
+ID_LAG_vecteur <- Macro_T1$ID_LAG[non_vides]
+
+
+#### Calcul du TBI ----
+
+result <- TBI(
+  especes_T1,
+  especes_T2,
+  method = "%difference",
+  nperm = 999,
+  test.t.perm = FALSE
+)
+
+# Résumé dans un tableau
+
+tbi_result <- data.frame(
+  ID_LAG = ID_LAG_vecteur,
+  TBI = result$TBI,
+  p_value = result$p.TBI,
+  pertes = result$BCD.mat[, "B/(2A+B+C)"],
+  gains = result$BCD.mat[, "C/(2A+B+C)"],
+  change = result$BCD.mat[, "D=(B+C)/(2A+B+C)"]
+)
+
+
+#### Graphs TBI ----
+#1
+plot(tbi_result)
+text(tbi_result$BCD.mat[, "B/(2A+B+C)"], tbi_result$BCD.mat[, "C/(2A+B+C)"],
+     labels = ID_LAG_vecteur, pos = 3, cex = 0.8)
+#2
+plot(result$BCD.mat[, "B/(2A+B+C)"],  # pertes
+     result$BCD.mat[, "C/(2A+B+C)"],  # gains
+     xlab = "Pertes (B / (2A+B+C))",
+     ylab = "Gains (C / (2A+B+C))",
+     main = "Changes in dissimilarity (TBI)",
+     pch = 19, col = "grey",
+     xlim = c(0,1),
+     ylim = c(0,1)
+     )
+
+text(result$BCD.mat[, "B/(2A+B+C)"], result$BCD.mat[, "C/(2A+B+C)"],
+     labels = rownames(result$BCD.mat), pos = 3, cex = 0.7)
+
+abline(a = 0, b = 1, col = "red", lty = 2, lwd = 2)
+
+loess_fit <- loess(result$BCD.mat[, "C/(2A+B+C)"] ~ result$BCD.mat[, "B/(2A+B+C)"])
+x_vals <- seq(min(result$BCD.mat[, "B/(2A+B+C)"]), max(result$BCD.mat[, "B/(2A+B+C)"]), length.out = 100)
+y_preds <- predict(loess_fit, newdata = x_vals)
+
+lines(x_vals, y_preds, col = "darkblue", lwd = 2)
+
+#3
+ggplot(tbi_result, aes(x = ID_LAG, y = TBI)) +
+  geom_col(fill = "#69b3a2") +
+  labs(title = "TBI (dissimilarité) par site entre 2020 et 2025",
+       x = "ID_LAG",
+       y = "Indice TBI") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+#4
+df_long <- tbi_result %>%
+  select(ID_LAG, pertes, gains) %>%
+  pivot_longer(cols = c(pertes, gains), names_to = "type", values_to = "valeur")
+
+ggplot(df_long, aes(x = ID_LAG, y = valeur, fill = type)) +
+  geom_col(position = "stack") +
+  scale_fill_manual(values = c("pertes" = "#F8766D", "gains" = "lightgreen")) +
+  labs(title = "Pertes et gains d'espèces par site (2020-2025)",
+       x = "ID_LAG",
+       y = "Proportion") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+#5
+ggplot(tbi_result, aes(x = pertes, y = gains, label = ID_LAG)) +
+  geom_point(size = 3, color = "#619CFF") +
+  geom_text(vjust = -0.5, size = 3) +
+  labs(title = "Pertes vs Gains d'espèces par site",
+       x = "Pertes (B/(2A+B+C))",
+       y = "Gains (C/(2A+B+C))") +
+  theme_minimal()
+
+#6 : Scatter plot Pertes/Gains avec polygone et ID_LAG 
+hulls <- tbi_result %>%
+  group_by(Site) %>%
+  slice(chull(pertes, gains)) %>%
+  ungroup()
+
+ggplot(tbi_result, aes(x = pertes, y = gains, label = ID_LAG)) +
+  geom_point(size = 3, color = "#619CFF") +
+  geom_text(vjust = -0.5, size = 3) +
+  geom_polygon(data = hulls, aes(x = pertes, y = gains, fill = Site, group = Site),
+               alpha = 0.2, color = NA) +
+  labs(title = "Pertes vs Gains d'espèces par site",
+       x = "Pertes (B/(2A+B+C))",
+       y = "Gains (C/(2A+B+C))") +
+  theme_minimal()
+
+#7 : Scatter plot Pertes/Gains avec polygones 
+
+df_tbi = tbi_result %>%
+  left_join(select(Macro_Ptscontacts, ID_LAG, Site) %>% distinct(), by = "ID_LAG")
+
+hulls = df_tbi %>%
+  group_by(Site) %>%
+  slice(chull(pertes, gains)) %>%
+  ungroup()
+
+ggplot(df_tbi, aes(x = pertes, y = gains, color = Site)) +
+  geom_point(size = 3) +
+  geom_polygon(data = hulls, aes(fill = Site), alpha = 0.2, color = NA) +
+  labs(title = "Pertes vs Gains par site avec polygones convexes",
+       x = "Pertes",
+       y = "Gains") +
+  theme_minimal()
+
+#8 : Contour de densité 
+ggplot(tbi_result, aes(x = pertes, y = gains, label = ID_LAG)) +
+  geom_density_2d(color = "red") + 
+  geom_point(size = 3, color = "grey") +
+  geom_text_repel(vjust = -0.5, size = 3) +
+  labs(title = "Pertes vs Gains d'espèces par site avec contours de densité",
+       x = "Pertes (B/(2A+B+C))",
+       y = "Gains (C/(2A+B+C))") +
+  theme_minimal()
+
+#9 : Heatmap de densité
+
+pb = ggplot_build(
+  ggplot(tbi_result, aes(pertes, gains)) + geom_density_2d_filled()
+)
+
+niveaux <- length(levels(pb$data[[1]]$level))  # 13
+palette_vert_rouge <- colorRampPalette(c("lightgreen", "orange", "#F8766D"))(niveaux)
+
+ggplot(tbi_result, aes(x = pertes, y = gains)) +
+  geom_density_2d_filled(alpha = 0.8, bins = niveaux) +  # heatmap en dessous
+  scale_fill_manual(values = palette_vert_rouge) +
+  geom_point(size = 3, color = "grey") +              # points au-dessus
+  geom_text_repel(aes(label = ID_LAG), vjust = -0.5, size = 3) + # texte au-dessus
+  labs(title = "Pertes vs Gains avec heatmap de densité",
+       x = "Pertes (B/(2A+B+C))",
+       y = "Gains (C/(2A+B+C))") +
+  theme_minimal()
+
+#10 : Ellipse de concentration 
+
+ggplot(df_tbi, aes(x = pertes, y = gains, color = Site)) +
+  geom_point(size = 3) +
+  geom_text(aes(label = ID_LAG), vjust = -0.5, size = 3, show.legend = FALSE) +
+  stat_ellipse(level = 0.68, size = 1) +  # ellipse à ~1 écart-type (68%)
+  labs(title = "Pertes vs Gains avec ellipse de concentration par site",
+       x = "Pertes (B/(2A+B+C))",
+       y = "Gains (C/(2A+B+C))") +
+  theme_minimal()
+
+
+#Sites les plus changés 
+
+tbi_result = tbi_result %>%
+  left_join(Macro_T1 %>% select(ID_LAG, Site), by = "ID_LAG")
+tbi_result_sorted = tbi_result %>%
+  arrange(desc(change))
+
+# Voir les 5 lagunes les plus changées
+head(tbi_result_sorted, 5)
+# Voir les 5 lagunes les plus stables
+tail(tbi_result_sorted, 5)
+
+#Graph 
+#1 : Par lagunes 
+ggplot(tbi_result_sorted, aes(x = reorder(ID_LAG, change), y = change, fill = Site)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Changement total (TBI) par lagune",
+    x = "ID_LAG",
+    y = "TBI - Dissimilarité totale (B+C)/(2A+B+C)"
+  ) +
+  scale_fill_brewer(palette = "Set3") +
+  theme_minimal()
+
+#2 : Par sites 
+ggplot(tbi_result, aes(x = Site, y = change)) +
+  geom_boxplot(fill = "#A6D8A8", color = "black") +
+  geom_jitter(width = 0.2, alpha = 0.6, color = "darkblue") +
+  labs(
+    title = "Variation du changement (TBI) par site",
+    x = "Site",
+    y = "TBI - Dissimilarité totale"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
