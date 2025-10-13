@@ -7,7 +7,7 @@ Macro_Ptscontacts= read.csv("Macro_Ptscontacts.csv", header = TRUE, sep = ",", d
 getwd()
 setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data")
 Data_envir= read.csv("Data_envir.csv", header = TRUE, sep = ",", dec=".")
-
+Data_envir = Data_envir [, -c(12,13,17)]
 
 ### RDA ----
 #Sortir la colonne sable pour eviter une correlation entre les variables envir 
@@ -17,7 +17,7 @@ Data_envir = Data_envir [, -11]
 df_merged = merge(Macro_Ptscontacts, Data_envir, by = c("Annee", "Site", "ID_LAG"))
 
 Y = df_merged [, 4:21]  #Especes == variable a exploquer 
-X = df_merged [, 22:28] #Var envirr == variables explicatives 
+X = df_merged [, 22:31] #Var envirr == variables explicatives 
 
 #Nettoyer les donnes 
 complete_rows = complete.cases(Y, X)
@@ -95,3 +95,98 @@ pheatmap(cor_matrix_clean,
          cluster_cols = TRUE,
          display_numbers = TRUE,
          main = "Corrélation espèces vs variables environnementales")
+
+
+###LM sur TBI ---- 
+
+#Refaire TBI ici rapidement 
+Macro_T1 = Macro_Ptscontacts %>% filter(Annee == 2020) %>% arrange(ID_LAG)
+Macro_T2 = Macro_Ptscontacts %>% filter(Annee == 2025) %>% arrange(ID_LAG)
+ID_communs = intersect(Macro_T1$ID_LAG, Macro_T2$ID_LAG)
+Macro_T1 = Macro_T1 %>% filter(ID_LAG %in% ID_communs) %>% arrange(ID_LAG)
+Macro_T2 = Macro_T2 %>% filter(ID_LAG %in% ID_communs) %>% arrange(ID_LAG)
+especes_T1 = Macro_T1 %>% dplyr::select(-Annee, -Site, -ID_LAG)
+especes_T2 = Macro_T2 %>% dplyr::select(-Annee, -Site, -ID_LAG)
+rownames(especes_T1) = Macro_T1$ID_LAG
+rownames(especes_T2) = Macro_T2$ID_LAG
+non_vides = which(rowSums(especes_T1) != 0 & rowSums(especes_T2) != 0)
+especes_T1 = especes_T1[non_vides, ]
+especes_T2 = especes_T2[non_vides, ]
+ID_LAG_vecteur = Macro_T1$ID_LAG[non_vides]
+#### Calcul du TBI ----
+result = TBI(
+  especes_T1,
+  especes_T2,
+  method = "%difference",
+  nperm = 999,
+  test.t.perm = FALSE
+)
+tbi_result = data.frame(
+  ID_LAG = ID_LAG_vecteur,
+  TBI = result$TBI,
+  p_value = result$p.TBI,
+  pertes = result$BCD.mat[, "B/(2A+B+C)"],
+  gains = result$BCD.mat[, "C/(2A+B+C)"],
+  change = result$BCD.mat[, "D=(B+C)/(2A+B+C)"]
+)
+
+#Preparer les donnees envir
+envir_2020 = Data_envir %>% filter(Annee == 2020) %>% arrange(ID_LAG)
+envir_2025 = Data_envir %>% filter(Annee == 2025) %>% arrange(ID_LAG)
+ID_envir_communs = intersect(envir_2020$ID_LAG, envir_2025$ID_LAG)
+envir_2020 = envir_2020 %>% filter(ID_LAG %in% ID_envir_communs) %>% arrange(ID_LAG)
+envir_2025 = envir_2025 %>% filter(ID_LAG %in% ID_envir_communs) %>% arrange(ID_LAG)
+stopifnot(identical(envir_2020$ID_LAG, envir_2025$ID_LAG))
+env_vars_2020 = envir_2020 %>% dplyr::select(-Annee, -Site, -ID_LAG)
+env_vars_2025 = envir_2025 %>% dplyr::select(-Annee, -Site, -ID_LAG)
+
+# Calcul du delta (2025 - 2020)
+delta_envir = env_vars_2025 - env_vars_2020
+delta_envir$ID_LAG = envir_2020$ID_LAG
+
+df_model = tbi_result %>%
+  inner_join(delta_envir, by = "ID_LAG")
+
+#### Calcul du LM  ----
+modele_TBI = lm(change ~ ., data = df_model %>% dplyr::select(-ID_LAG, -TBI, -p_value, -pertes, -gains))
+summary(modele_TBI)
+
+par(mfrow = c(2, 2))  # 4 graphiques en 1
+plot(df_model)
+
+# Simplification du modèle
+modele_simplifie = stepAIC(modele_TBI, direction = "both", trace = FALSE)
+summary(modele_simplifie)
+par(mfrow = c(2, 2))  # 4 graphiques en 1
+plot(modele_simplifie)
+
+
+#### Graphs ----
+
+#1 : uns par uns 
+variables = c("P2O5_TOT", "CAILLOUX", "LIMONS", "temperature", "hauteur_eau", "salinite")
+
+for (var in variables) {
+  p = ggplot(modele_simplifie, aes_string(x = var, y = "change")) +
+    geom_point() +
+    geom_smooth(method = "lm", se = TRUE, color = "blue") +
+    labs(title = paste("Relation entre", var, "et change"),
+         x = var, y = "Change (TBI)") +
+    theme_minimal()
+  
+  print(p)
+}
+
+#2 : les 4 significatifs ensembles 
+
+vars_subset <- c("LIMONS", "salinite", "CAILLOUX", "temperature")
+plots <- lapply(vars_subset, function(var) {
+  ggplot(df_model, aes_string(x = var, y = "change")) +
+    geom_point() +
+    geom_smooth(method = "lm", se = TRUE, color = "blue") +
+    labs(title = paste("Relation entre", var, "et change"),
+         x = var, y = "Change (TBI)") +
+    theme_minimal()
+})
+# Afficher les 4 graphiques en 2x2
+(plots[[1]] | plots[[2]]) / (plots[[3]] | plots[[4]])
