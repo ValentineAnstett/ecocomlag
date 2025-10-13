@@ -148,7 +148,7 @@ data_envir = merge(Sol, Hydro_germi,
 any(duplicated(data_envir[, c("Annee", "Site", "ID_LAG")]))
 
 # Importer dans processed 
-write.csv(Sol, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Data_envir.csv", row.names = FALSE)
+write.csv(data_envir, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Data_envir.csv", row.names = FALSE)
 
 
 #################################################################
