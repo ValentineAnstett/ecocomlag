@@ -70,6 +70,25 @@ Hydro_germi = Hydro_germi %>%
 lag_a_exclure =  c("PCA_CHA_02", "PCA_CHA_04", "ORB_ORP_11")
 Hydro_germi = Hydro_germi %>%
   filter(!code %in% lag_a_exclure)
+#Renommer PCA_CHA 
+Hydro_germi = Hydro_germi %>%
+  mutate(code = recode(code,
+                         "PCA_CHA_01" = "PCA_CAP_06",
+                         "PCA_CHA_03" = "PCA_CAP_08",
+                         "PCA_CHA_05" = "PCA_CAP_10"))
+
+#Renommer les colonnes pour coller avec les autres frame 
+Hydro_germi = Hydro_germi %>%
+  mutate(Site = sub("_[^_]+$", "", code))
+Hydro_germi = Hydro_germi %>%
+  rename(
+    Annee = annee,
+    ID_LAG = code
+  )
+
+Hydro_germi = Hydro_germi[,-1]
+
+Hydro_germi = Hydro_germi[,c(2,9,1,3:8)]
 
 # Importer dans processed 
 write.csv(Hydro_germi, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_hydro/Hydro_germi.csv", row.names = FALSE)
@@ -88,12 +107,11 @@ Sol = Sol %>%
                          "PCA_CHA_03" = "PCA_CAP_08",
                          "PCA_CHA_05" = "PCA_CAP_10"))
 Sol = Sol %>%
-  filter(!(ID_LAG %in% c("PCA_CHA_02", "PCA_CHA_04")))
+  filter(!(ID_LAG %in% c("PCA_CHA_02", "PCA_CHA_04","ORB_ORP_11")))
 
 #Ajouter les SIte 
 Sol = Sol %>%
   mutate(Site = sub("_[^_]+$", "", ID_LAG))
-Sol = Sol[, c(1, 21, 2:20)]
 
 #Trier les sites
 sites_a_exclure = c("BPA_PIS", "BAG_GRA", "CAN_NAZ", "HYE_VIE", "THA_SET")
@@ -111,19 +129,26 @@ Sol = Sol[, -c(10:13)]
 #Mettre 2020 à la place de 2021 pour fit les autres dataframe 
 Sol$Annee[Sol$Annee == 2021] = 2020
 
+# Importer dans processed 
+write.csv(Sol, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_sol/Sol.csv", row.names = FALSE)
 
 
 #################################################################
 ########## DATAFRAME Variables Environnementales ################
 ################################################################
-
-#Verifier qu'on a les mêmes lignes 
-
+setdiff(Sol$ID_LAG, Hydro_germi$ID_LAG)
+setdiff(Hydro_germi$ID_LAG, Sol$ID_LAG)
 
 #Merge les tableaux
 
+data_envir = merge(Sol, Hydro_germi, 
+                   by = c("Annee", "Site", "ID_LAG"), 
+                   all = FALSE)
+#verif 
+any(duplicated(data_envir[, c("Annee", "Site", "ID_LAG")]))
 
-
+# Importer dans processed 
+write.csv(Sol, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Data_envir.csv", row.names = FALSE)
 
 
 #################################################################
