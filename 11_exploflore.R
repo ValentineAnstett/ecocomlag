@@ -6,14 +6,13 @@ setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Pro
 Macro_Ptscontacts= read.csv("Macro_Ptscontacts.csv", header = TRUE, sep = ",", dec=".")
 
 
-
 ###  Boxplots 2020 vs 2025 ----
-couleurs_annee <- c("2020" = "#F8766D",  # rouge clair
+couleurs_annee = c("2020" = "#F8766D",  # rouge clair
                     "2025" = "#00BFC4") 
 #### Boxplot sur le total de chaque lagune ----
-ggplot(Macro_Ptscontacts, aes(x = factor(annee), y = TOT, fill = factor(annee))) +
+ggplot(Macro_Ptscontacts, aes(x = factor(Annee), y = TOT, fill = factor(Annee))) +
   geom_boxplot(alpha = 0.5, color = "black") +   # boxplot avec contour noir
-  geom_line(aes(group = LAGUNE), color = "grey50", alpha = 0.7, show.legend = FALSE) +
+  geom_line(aes(group = ID_LAG), color = "grey50", alpha = 0.7, show.legend = FALSE) +
   geom_point(color = "black", size = 2, show.legend = FALSE) +
   scale_fill_manual(values = couleurs_annee) +  # appliquer les couleurs
   labs(x = "Année", y =  "Valeurs TOT", fill = "Année") +
@@ -22,21 +21,21 @@ ggplot(Macro_Ptscontacts, aes(x = factor(annee), y = TOT, fill = factor(annee)))
 
 #Boxplot sur la moyenne des indices par lagunes 
 Macro_Ptscontacts_long = Macro_Ptscontacts %>%
-  filter(annee %in% c(2020, 2025)) %>%
+  filter(Annee %in% c(2020, 2025)) %>%
   pivot_longer(
-    cols = -c(annee, Site, LAGUNE),
+    cols = -c(Annee, Site, ID_LAG),
     names_to = "Espece",
     values_to = "indice"
   )
 
 df_agg = Macro_Ptscontacts_long %>%
-  group_by(annee, LAGUNE) %>%
+  group_by(Annee, ID_LAG) %>%
   summarise(moyenne_indice = mean(indice, na.rm = TRUE)) %>%
   ungroup()
 
-ggplot(df_agg, aes(x = factor(annee), y = moyenne_indice, fill = factor(annee))) +
+ggplot(df_agg, aes(x = factor(Annee), y = moyenne_indice, fill = factor(Annee))) +
   geom_boxplot(alpha = 0.5, color = "black") +   # boxplot avec contour noir
-  geom_line(aes(group = LAGUNE), color = "grey50", alpha = 0.7, show.legend = FALSE) +
+  geom_line(aes(group = ID_LAG), color = "grey50", alpha = 0.7, show.legend = FALSE) +
   geom_point(color = "black", size = 2, show.legend = FALSE) +
   scale_fill_manual(values = couleurs_annee) +  # appliquer les couleurs
   labs(x = "Année", y = "Moyenne indice par lagune", fill = "Année") +
@@ -47,14 +46,14 @@ ggplot(df_agg, aes(x = factor(annee), y = moyenne_indice, fill = factor(annee)))
 
 Macro_Ptscontacts = Macro_Ptscontacts %>%
   rowwise() %>%
-  mutate(n_sp = sum(c_across(-c(annee, Site, LAGUNE)) > 0, na.rm = TRUE)) %>%
+  mutate(n_sp = sum(c_across(-c(Annee, Site, ID_LAG)) > 0, na.rm = TRUE)) %>%
   ungroup()
 
 df_n_sp = Macro_Ptscontacts %>%
-  select(annee,Site, LAGUNE, n_sp) %>%
-  filter(annee %in% c(2020, 2025)) %>%
+  select(Annee,Site, ID_LAG, n_sp) %>%
+  filter(Annee %in% c(2020, 2025)) %>%
   pivot_wider(
-    names_from = annee,
+    names_from = Annee,
     values_from = n_sp,
     names_prefix = "n_sp_"
   ) %>%
@@ -83,8 +82,8 @@ ggplot(df_n_sp, aes(x = n_sp_2025, y = n_sp_2020, color = Site)) +
 #Transformation des datas avec Hellinger
 data_afc = Macro_Ptscontacts[, -c(19, 22)]
 data_afc_clean = data_afc %>% mutate(across(everything(), ~replace_na(.x, 0)))
-meta = data_afc_clean %>% select(annee, Site, LAGUNE)
-data_num = data_afc_clean %>% select(-annee, -Site, -LAGUNE)
+meta = data_afc_clean %>% select(Annee, Site, ID_LAG)
+data_num = data_afc_clean %>% select(-Annee, -Site, -ID_LAG)
 data_hellinger = decostand(data_num, method = "hellinger")
 
 #Faire l'ACP sur données transformées
@@ -111,7 +110,7 @@ ggplot(coord_ind, aes(x = Dim.1, y = Dim.2, color = Site)) +
   geom_segment(data = coord_var, aes(x = 0, y = 0, xend = Dim.1, yend = Dim.2),
                arrow = arrow(length = unit(0.2, "cm")), color = "black", inherit.aes = FALSE) +
   geom_text_repel(data = coord_var, aes(x = Dim.1, y = Dim.2, label = Espece),
-                  color = "black", size = 3, inherit.aes = FALSE, max.overlaps = 20) +
+                  color = "black", size = 5, inherit.aes = FALSE, max.overlaps = 20) +
   geom_hline(yintercept = 0, linetype = "dotted", color = "grey40") +
   geom_vline(xintercept = 0, linetype = "dotted", color = "grey40") +
   labs(title = "ACP sur données transformées Hellinger\navec lagunes colorées par site et flèches espèces",
@@ -133,26 +132,26 @@ ggplot(coord_ind, aes(x = Dim.1, y = Dim.2, color = Site)) +
 #Graph polygone mais par LAGUNE 
 
 group_circles = coord_ind %>%
-  group_by(LAGUNE) %>%
+  group_by(ID_LAG) %>%
   summarise(
     x0 = mean(Dim.1),
     y0 = mean(Dim.2),
     r = max(sqrt((Dim.1 - mean(Dim.1))^2 + (Dim.2 - mean(Dim.2))^2)) + 0.1
   )
 ggplot(coord_ind, aes(x = Dim.1, y = Dim.2)) +
-  geom_point(aes(color = LAGUNE), size = 3, alpha = 0.8) +
+  geom_point(aes(color = ID_LAG), size = 3, alpha = 0.8) +
   
-  geom_circle(data = group_circles, aes(x0 = x0, y0 = y0, r = r, fill = LAGUNE),
+  geom_circle(data = group_circles, aes(x0 = x0, y0 = y0, r = r, fill = ID_LAG),
               alpha = 0.15, color = NA, inherit.aes = FALSE) +
   coord_fixed() +
   theme_minimal()
 
 #Sortir les outliers et refaire le graph par site : PAL_VIL_06 et 07 
 
-ggplot(coord_ind %>% filter(!LAGUNE %in% c("PAL_VIL_07", "PAL_VIL_06","ORB_MAI_04","ORB_MAI_05")), aes(x = Dim.1, y = Dim.2, color = Site)) +
+ggplot(coord_ind %>% filter(!ID_LAG %in% c("PAL_VIL_07", "PAL_VIL_06","ORB_MAI_04","ORB_MAI_05")), aes(x = Dim.1, y = Dim.2, color = Site)) +
   geom_point(size = 3, alpha = 0.8) +
   geom_polygon(
-    data = (coord_ind %>% filter(!LAGUNE %in% c("PAL_VIL_07", "PAL_VIL_06","ORB_MAI_04","ORB_MAI_05")) %>% group_by(Site) %>% group_modify(~get_hull(.x))),
+    data = (coord_ind %>% filter(!ID_LAG %in% c("PAL_VIL_07", "PAL_VIL_06","ORB_MAI_04","ORB_MAI_05")) %>% group_by(Site) %>% group_modify(~get_hull(.x))),
     aes(x = Dim.1, y = Dim.2, fill = Site),
     alpha = 0.15, color = NA, inherit.aes = FALSE
   ) +
@@ -186,14 +185,14 @@ ggplot(coord_ind %>% filter(!LAGUNE %in% c("PAL_VIL_07", "PAL_VIL_06","ORB_MAI_0
 
 ##Graph avec polygone par année 
 
-ggplot(coord_ind %>% filter(!LAGUNE %in% c("PAL_VIL_07", "PAL_VIL_06","ORB_MAI_04","ORB_MAI_05")), 
-       aes(x = Dim.1, y = Dim.2, color = as.factor(annee))) +
+ggplot(coord_ind %>% filter(!ID_LAG %in% c("PAL_VIL_07", "PAL_VIL_06","ORB_MAI_04","ORB_MAI_05")), 
+       aes(x = Dim.1, y = Dim.2, color = as.factor(Annee))) +
   geom_point(size = 3, alpha = 0.8) +
   geom_polygon(
     data = (coord_ind %>% 
-              filter(!LAGUNE %in% c("PAL_VIL_07", "PAL_VIL_06","ORB_MAI_04","ORB_MAI_05")) %>% 
-              group_by(annee) %>% group_modify(~get_hull(.x))),
-    aes(x = Dim.1, y = Dim.2, fill = as.factor(annee), group = annee),
+              filter(!ID_LAG %in% c("PAL_VIL_07", "PAL_VIL_06","ORB_MAI_04","ORB_MAI_05")) %>% 
+              group_by(Annee) %>% group_modify(~get_hull(.x))),
+    aes(x = Dim.1, y = Dim.2, fill = as.factor(Annee), group = Annee),
     alpha = 0.15, color = NA, inherit.aes = FALSE
   ) +
   geom_segment(
