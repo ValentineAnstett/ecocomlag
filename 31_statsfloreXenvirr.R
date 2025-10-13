@@ -97,7 +97,7 @@ pheatmap(cor_matrix_clean,
          main = "Corrélation espèces vs variables environnementales")
 
 
-###LM sur TBI ---- 
+###LM sur TBI global ---- 
 
 #Refaire TBI ici rapidement 
 Macro_T1 = Macro_Ptscontacts %>% filter(Annee == 2020) %>% arrange(ID_LAG)
@@ -190,3 +190,28 @@ plots <- lapply(vars_subset, function(var) {
 })
 # Afficher les 4 graphiques en 2x2
 (plots[[1]] | plots[[2]]) / (plots[[3]] | plots[[4]])
+
+
+### LM sur TBI pertes ----
+
+modele_pertes <- lm(pertes ~ ., data = df_model %>% dplyr::select(-ID_LAG, -TBI, -p_value, -gains, -change))
+summary(modele_pertes)
+
+# Simplification du modèle
+modele_simplifie_pertes = stepAIC(modele_pertes, direction = "both", trace = FALSE)
+summary(modele_simplifie_pertes)
+par(mfrow = c(2, 2))  # 4 graphiques en 1
+plot(modele_simplifie_pertes)
+
+#Graph 
+vars_subset_pertes = c("LIMONS", "salinite")
+plots_pertes = lapply(vars_subset_pertes, function(var) {
+  ggplot(df_model, aes_string(x = var, y = "pertes")) +
+    geom_point() +
+    geom_smooth(method = "lm", se = TRUE, color = "blue") +
+    labs(title = paste("Relation entre", var, "et pertes"),
+         x = var, y = "Pertes (TBI)") +
+    theme_minimal()
+})
+# Afficher les 4 graphiques en 2x2
+(plots_pertes[[1]] / plots_pertes[[2]])
