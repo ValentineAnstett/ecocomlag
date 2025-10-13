@@ -65,6 +65,8 @@ sig_stars = function(p) {
 stars = sig_stars(wilcox_tot$p.value)
 
 #Graph
+
+couleurs_annee_transparentes = adjustcolor(couleurs_annee, alpha.f = 0.5)
 pval_tot = signif(wilcox_tot$p.value, 3)
 pval_text_tot = paste0("p = ", signif(wilcox_tot$p.value, 3), " ", stars)
 
@@ -76,7 +78,7 @@ boxplot(df_wide$TOT.2020, df_wide$TOT.2025,
         names = c("2020", "2025"),
         main = "Comparaison de TOT entre 2020 et 2025",
         ylab = "Abondance TOT",
-        col = couleurs_annee,
+        col = couleurs_annee_transparentes,
         cex.main = 1.8,
         cex.lab = 1.5,
         cex.axis = 1.3,
@@ -138,7 +140,7 @@ annot = annot %>%
 
 # 4. Plot avec annotation
 ggplot(df_long, aes(x = Espece, y = Abondance, fill = as.factor(Annee))) +
-  geom_boxplot(position = position_dodge(0.8)) +
+  geom_boxplot(position = position_dodge(0.8), alpha = 0.5) +
   geom_text(data = annot,
             aes(x = Espece, y = y, label = p_label),
             inherit.aes = FALSE,
