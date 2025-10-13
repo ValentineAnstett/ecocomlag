@@ -4,7 +4,6 @@ setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Pro
 Macro_Ptscontacts= read.csv("Macro_Ptscontacts.csv", header = TRUE, sep = ",", dec=".")
 
 #Import dataset Envirr 
-#Import dataset
 getwd()
 setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data")
 Data_envir= read.csv("Data_envir.csv", header = TRUE, sep = ",", dec=".")
@@ -48,7 +47,7 @@ df_env = as.data.frame(env_scores)
 df_species$Species = rownames(df_species)
 df_env$Var = rownames(df_env)
 
-# Graphe ggplot
+#### Graph ggplot ----
 ggplot() +
   geom_point(data = df_sites, aes(x = RDA1, y = RDA2), colour = "grey50") +
   geom_segment(data = df_species, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
@@ -65,7 +64,7 @@ ggplot() +
   theme_minimal(base_size = 16)
 
 
-#Influence des variables environnementales 
+#### Influence des variables environnementales ----
 species_scores = scores(rda_result, display = "species", scaling = 2)
 env_scores = scores(rda_result, display = "bp", scaling = 2)
 
