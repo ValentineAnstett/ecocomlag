@@ -285,7 +285,12 @@ sites_a_exclure = c("BPA_PIS", "BAG_GRA", "CAN_NAZ", "HYE_VIE", "THA_SET")
 Macro_Ptscontacts = Macro_Ptscontacts %>%
   filter(!(Site %in% sites_a_exclure))
 
-
+#Renommer les colonnes pour coller avec les autres frame 
+Macro_Ptscontacts = Macro_Ptscontacts %>%
+  rename(
+    Annee = annee,
+    ID_LAG = LAGUNE
+  )
 
 #Enregistrer
 write.csv(Macro_Ptscontacts, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_Macro/Macro_Ptscontacts.csv", row.names = FALSE)
