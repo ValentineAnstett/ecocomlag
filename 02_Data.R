@@ -117,6 +117,15 @@ Sol$Annee[Sol$Annee == 2021] = 2020
 ########## DATAFRAME Variables Environnementales ################
 ################################################################
 
+#Verifier qu'on a les mêmes lignes 
+
+
+#Merge les tableaux
+
+
+
+
+
 #################################################################
 ########### DATAFRAME Indices de présence macrophytes ##########
 ################################################################
