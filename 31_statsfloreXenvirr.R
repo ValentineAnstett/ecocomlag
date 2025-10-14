@@ -3,6 +3,8 @@ getwd()
 setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_Macro")
 Macro_Ptscontacts= read.csv("Macro_Ptscontacts.csv", header = TRUE, sep = ",", dec=".")
 
+Macro_Ptscontacts_sanstot = Macro_Ptscontacts [, -19]
+
 #Import dataset Envirr 
 getwd()
 setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data")
@@ -14,10 +16,10 @@ Data_envir = Data_envir [, -c(12,13,17)]
 Data_envir = Data_envir [, -11]
 
 #Preparer les données 
-df_merged = merge(Macro_Ptscontacts, Data_envir, by = c("Annee", "Site", "ID_LAG"))
+df_merged = merge(Macro_Ptscontacts_sanstot, Data_envir, by = c("Annee", "Site", "ID_LAG"))
 
-Y = df_merged [, 4:21]  #Especes == variable a exploquer 
-X = df_merged [, 22:31] #Var envirr == variables explicatives 
+Y = df_merged [, 4:20]  #Especes == variable a exploquer 
+X = df_merged [, 21:30] #Var envirr == variables explicatives 
 
 #Nettoyer les donnes 
 complete_rows = complete.cases(Y, X)
@@ -48,6 +50,7 @@ df_species$Species = rownames(df_species)
 df_env$Var = rownames(df_env)
 
 #### Graph ggplot ----
+
 ggplot() +
   geom_point(data = df_sites, aes(x = RDA1, y = RDA2), colour = "grey50") +
   geom_segment(data = df_species, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
@@ -58,11 +61,13 @@ ggplot() +
                arrow = arrow(length = unit(0.2, "cm")), colour = "darkblue") +
   geom_text_repel(data = df_env, aes(x = RDA1, y = RDA2, label = Var),
                   colour = "darkblue", size = 5, max.overlaps = 30) + 
+  geom_hline(yintercept = 0, color = "black") +           
+  geom_vline(xintercept = 0, color = "black") +           
   xlab("RDA1") +
   ylab("RDA2") +
-  ggtitle("Biplot RDA : Espèces (vert) / Variables environnementales (bleu)") +
-  theme_minimal(base_size = 16)
-
+  ggtitle("Biplot RDA ") +
+  theme_minimal(base_size = 16) +
+  theme(panel.border = element_rect(color = "black", fill = NA, linewidth = 1))
 
 #### Influence des variables environnementales ----
 species_scores = scores(rda_result, display = "species", scaling = 2)
@@ -194,7 +199,7 @@ plots <- lapply(vars_subset, function(var) {
 
 ### LM sur TBI pertes ----
 
-modele_pertes <- lm(pertes ~ ., data = df_model %>% dplyr::select(-ID_LAG, -TBI, -p_value, -gains, -change))
+modele_pertes = lm(pertes ~ ., data = df_model %>% dplyr::select(-ID_LAG, -TBI, -p_value, -gains, -change))
 summary(modele_pertes)
 
 # Simplification du modèle
@@ -215,3 +220,25 @@ plots_pertes = lapply(vars_subset_pertes, function(var) {
 })
 # Afficher les 4 graphiques en 2x2
 (plots_pertes[[1]] / plots_pertes[[2]])
+
+### LM sur gains du TBI ----
+
+df_gains_lm <- df_model %>%
+  dplyr::select(-ID_LAG, -TBI, -p_value, -pertes, -change) %>%
+  na.omit()
+
+modele_gains <- lm(gains ~ ., data = df_gains_lm)
+summary(modele_gains)
+
+# Simplification du modèle
+modele_simplifie_gains <- stepAIC(modele_gains, direction = "both", trace = FALSE)
+summary(modele_simplifie_gains)
+par(mfrow = c(2, 2))
+plot(modele_simplifie_gains)
+
+ggplot(df_gains_lm, aes(x = C.N, y = gains)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE, color = "blue") +
+  labs(title = "Lien entre le ratio C/N et les gains d'espèces (TBI)",
+       x = "C/N", y = "Gains (TBI)") +
+  theme_minimal()
