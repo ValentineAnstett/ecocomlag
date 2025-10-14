@@ -163,7 +163,7 @@ Macro2020 = read_xls("MACRO_occur_03.21.xls")
 
 Macro2020_clean = Macro2020 [,-c(2,3,4,5,34,35)]
 Macro2020_clean = Macro2020_clean %>%
-  select(-ends_with("_REL_COV"))
+  dplyr::select(-ends_with("_REL_COV"))
 colnames(Macro2020_clean) = sub("_ABS_COV$", "", colnames(Macro2020_clean))
 Macro2020_clean = Macro2020_clean %>%
   mutate(annee = 2020)
@@ -194,7 +194,7 @@ Macro_Ptscontacts_2020 = df_result_2020 %>%
 Macro_Ptscontacts_2020$LAGUNE = gsub("_(\\d)$", "_0\\1", Macro_Ptscontacts_2020$LAGUNE)  # Ajouter un zéro si un seul chiffre après le dernier "_"
 Macro_Ptscontacts_2020$LAGUNE = gsub("_(\\d{2})$", "_\\1", Macro_Ptscontacts_2020$LAGUNE) # Assurez-vous qu'il n'y ait pas de modification si deux chiffres
 Macro_Ptscontacts_2020$LAGUNE = gsub("FOS_CAB", "FOS_REL", Macro_Ptscontacts_2020$LAGUNE) # Remplacer FOS_CAB par FOS_REL dans la colonne LAGUNE
-
+Macro_Ptscontacts_2020$LAGUNE = gsub("BAG_GRA", "BAG_PET", Macro_Ptscontacts_2020$LAGUNE)
 
 ###  Data 2023
 
@@ -229,13 +229,13 @@ Macro_Ptscontacts_2025 = df_result_2025 %>%
 
 #Remettre dans le bon sens 
 Macro_Ptscontacts_2025 = Macro_Ptscontacts_2025 %>%
-  select(annee, LAGUNE, Espece, indice_sp) %>%  
+  dplyr::select(annee, LAGUNE, Espece, indice_sp) %>%  
   pivot_wider(
     names_from = Espece,
     values_from = indice_sp
   )
 Macro_Ptscontacts_2020 = Macro_Ptscontacts_2020 %>%
-  select(annee, LAGUNE, Espece, indice_sp) %>%  
+  dplyr::select(annee, LAGUNE, Espece, indice_sp) %>%  
   pivot_wider(
     names_from = Espece,
     values_from = indice_sp
@@ -249,7 +249,7 @@ add_missing_cols = function(df, all_cols) {
   if (length(missing_cols) > 0) {
     df[missing_cols] <- 0
   }
-  df = df %>% select(all_of(all_cols))
+  df = df %>% dplyr::select(all_of(all_cols))
   return(df)
 }
 
@@ -257,9 +257,9 @@ Macro_Ptscontacts_2020 = add_missing_cols(Macro_Ptscontacts_2020, all_cols)
 Macro_Ptscontacts_2025 = add_missing_cols(Macro_Ptscontacts_2025, all_cols)
 
 Macro_Ptscontacts_2020 = Macro_Ptscontacts_2020 %>%
-  select(1, 2, sort(names(.)[-c(1, 2)]))
+  dplyr::select(1, 2, sort(names(.)[-c(1, 2)]))
 Macro_Ptscontacts_2025 = Macro_Ptscontacts_2025 %>%
-  select(1, 2, sort(names(.)[-c(1, 2)]))
+  dplyr::select(1, 2, sort(names(.)[-c(1, 2)]))
 
 #Megre les 2 frames 
 Macro_Ptscontacts = bind_rows(Macro_Ptscontacts_2020, Macro_Ptscontacts_2025)
