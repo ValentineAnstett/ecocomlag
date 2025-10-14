@@ -28,6 +28,17 @@ print(permanova_macro_global_result)
 permanova_macro_details_result = adonis2(dist_mat ~ Annee + Site + ID_LAG, data = data_clean, by = "terms", permutations = 999)
 print(permanova_macro_details_result)
 
+permanova_macro_site_result = adonis2(dist_mat ~ Site, data = data_clean, by = "terms", permutations = 999)
+print(permanova_macro_site_result)
+
+permanova_macro_lag_result = adonis2(dist_mat ~ ID_LAG, data = data_clean, by = "terms", permutations = 999)
+print(permanova_macro_lag_result)
+
+#Contribution des facteurs 
+result <- permanova_macro_details_result
+R2 <- result$R2
+names(R2) <- rownames(result)
+barplot(R2, main = "Contribution des facteurs (R²)", las=2)
 
 #Verifier la dispersion 
 
