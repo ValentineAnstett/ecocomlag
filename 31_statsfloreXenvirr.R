@@ -3,6 +3,9 @@ getwd()
 setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_Macro")
 Macro_Ptscontacts= read.csv("Macro_Ptscontacts.csv", header = TRUE, sep = ",", dec=".")
 
+Macro_Ptscontacts = Macro_Ptscontacts %>%
+  filter(!(ID_LAG %in% c("PAL_VIL_07", "PAL_VIL_06","ORB_MAI_04","ORB_MAI_05"))) #Outliers
+
 Macro_Ptscontacts_sanstot = Macro_Ptscontacts [, -19]
 
 #Import dataset Envirr 
@@ -10,6 +13,11 @@ getwd()
 setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data")
 Data_envir= read.csv("Data_envir.csv", header = TRUE, sep = ",", dec=".")
 Data_envir = Data_envir [, -c(12,13,17)]
+
+Data_envir = Data_envir %>%
+  filter(!(ID_LAG %in% c("PAL_VIL_07", "PAL_VIL_06","ORB_MAI_04","ORB_MAI_05"))) #Outliers
+
+
 
 ### RDA ----
 #Sortir la colonne sable pour eviter une correlation entre les variables envir 
@@ -156,7 +164,7 @@ df_model = tbi_result %>%
 modele_TBI = lm(change ~ ., data = df_model %>% dplyr::select(-ID_LAG, -TBI, -p_value, -pertes, -gains))
 summary(modele_TBI)
 
-par(mfrow = c(1, 1))  # 4 graphiques en 1
+par(mfrow = c(2, 2))  # 4 graphiques en 1
 plot(df_model)
 
 # Simplification du modèle
