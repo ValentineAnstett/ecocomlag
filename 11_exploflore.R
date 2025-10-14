@@ -4,6 +4,7 @@
 getwd()
 setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_Macro")
 Macro_Ptscontacts= read.csv("Macro_Ptscontacts.csv", header = TRUE, sep = ",", dec=".")
+Macro_Ptscontacts_sanstot = Macro_Ptscontacts [, -19]
 
 
 ###  Boxplots 2020 vs 2025 ----
@@ -38,19 +39,19 @@ ggplot(df_agg, aes(x = factor(Annee), y = moyenne_indice, fill = factor(Annee)))
   geom_line(aes(group = ID_LAG), color = "grey50", alpha = 0.7, show.legend = FALSE) +
   geom_point(color = "black", size = 2, show.legend = FALSE) +
   scale_fill_manual(values = couleurs_annee) +  # appliquer les couleurs
-  labs(x = "Année", y = "Moyenne indice par lagune", fill = "Année") +
+  labs(x = "Année", y = "Indice moyen de présence par lagune", fill = "Année") +
   theme_minimal() +
   theme(legend.position = "none")
 
-#### Nombre d'espèces par sites ----
+#### Richesse spécifique par sites ----
 
-Macro_Ptscontacts = Macro_Ptscontacts %>%
+Macro_Ptscontacts_sanstot = Macro_Ptscontacts_sanstot %>%
   rowwise() %>%
   mutate(n_sp = sum(c_across(-c(Annee, Site, ID_LAG)) > 0, na.rm = TRUE)) %>%
   ungroup()
 
-df_n_sp = Macro_Ptscontacts %>%
-  select(Annee,Site, ID_LAG, n_sp) %>%
+df_n_sp = Macro_Ptscontacts_sanstot %>%
+  dplyr::select(Annee,Site, ID_LAG, n_sp) %>%
   filter(Annee %in% c(2020, 2025)) %>%
   pivot_wider(
     names_from = Annee,
@@ -64,7 +65,7 @@ ggplot(df_n_sp, aes(x = n_sp_2025, y = n_sp_2020, color = Site)) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red", linewidth = 1) +
   coord_fixed(ratio = 1, xlim = c(0, 10), ylim = c(0, 10), expand = TRUE) +
   labs(
-    title = "Nombre d'espèces par site",
+    title = "Richesse spécifique par site",
     x = "2025",
     y = "2020",
     color = "Site"
@@ -77,13 +78,125 @@ ggplot(df_n_sp, aes(x = n_sp_2025, y = n_sp_2020, color = Site)) +
     axis.line = element_line(color = "black", size = 0.8)  # Axes visibles
   )
 
+#Avec Barycentre et IC 
+
+summary_df = df_n_sp %>%
+  group_by(Site) %>%
+  summarise(
+    mean_2025 = mean(n_sp_2025),
+    mean_2020 = mean(n_sp_2020),
+    se_2025 = sd(n_sp_2025) / sqrt(n()),
+    se_2020 = sd(n_sp_2020) / sqrt(n()),
+    n = n()
+  ) %>%
+  mutate(
+    # IC à 95% (approximation normale)
+    ic_lower_2025 = mean_2025 - 1.96 * se_2025,
+    ic_upper_2025 = mean_2025 + 1.96 * se_2025,
+    ic_lower_2020 = mean_2020 - 1.96 * se_2020,
+    ic_upper_2020 = mean_2020 + 1.96 * se_2020
+  )
+
+# Graphique avec barycentre et IC
+ggplot(df_n_sp, aes(x = n_sp_2025, y = n_sp_2020, color = Site)) +
+  #geom_jitter(size = 3, width = 0.2, height = 0.2) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red", linewidth = 1) +
+  geom_point(data = summary_df, aes(x = mean_2025, y = mean_2020, color = Site), 
+             size = 5, shape = 18, stroke = 1.5, inherit.aes = FALSE) +
+  geom_errorbarh(data = summary_df, 
+                 aes(y = mean_2020, xmin = ic_lower_2025, xmax = ic_upper_2025, color = Site), 
+                 height = 0.3, size = 1, inherit.aes = FALSE) +
+  geom_errorbar(data = summary_df, 
+                aes(x = mean_2025, ymin = ic_lower_2020, ymax = ic_upper_2020, color = Site), 
+                width = 0.3, size = 1, inherit.aes = FALSE) +
+  coord_fixed(ratio = 1, xlim = c(0, 10), ylim = c(0, 10), expand = TRUE) +
+  labs(
+    title = "Richesse spécifique par site",
+    x = "2025",
+    y = "2020",
+    color = "Site"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.grid.major = element_line(color = "grey60", size = 0.6),
+    panel.grid.minor = element_line(color = "grey80", size = 0.3),
+    panel.border = element_rect(color = "black", fill = NA, size = 0.8),
+    axis.line = element_line(color = "black", size = 0.8)
+  )
+
+#### Richesse max par site ??? 
+
+# 1. Calcul de la richesse spécifique (nombre d'espèces > 0) par ligne
+Macro_Ptscontacts_sanstot <- Macro_Ptscontacts_sanstot %>%
+  rowwise() %>%
+  mutate(n_sp = sum(c_across(-c(Annee, Site, ID_LAG)) > 0, na.rm = TRUE)) %>%
+  ungroup()
+
+# 2. Sélection des richesses max par lagune (Site) et année
+df_richesse_max <- Macro_Ptscontacts_sanstot %>%
+  group_by(Site, Annee) %>%
+  summarise(max_richesse = max(n_sp, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = Annee, values_from = max_richesse, names_prefix = "n_sp_")
+
+# Vérification : les colonnes devraient être n_sp_2020 et n_sp_2025
+# head(df_richesse_max)
+
+# 3. Calcul du barycentre et IC sur les max par site
+summary_max <- df_richesse_max %>%
+  summarise(
+    mean_2025 = mean(n_sp_2025),
+    mean_2020 = mean(n_sp_2020),
+    se_2025 = sd(n_sp_2025) / sqrt(n()),
+    se_2020 = sd(n_sp_2020) / sqrt(n()),
+    n = n()
+  ) %>%
+  mutate(
+    ic_lower_2025 = mean_2025 - 1.96 * se_2025,
+    ic_upper_2025 = mean_2025 + 1.96 * se_2025,
+    ic_lower_2020 = mean_2020 - 1.96 * se_2020,
+    ic_upper_2020 = mean_2020 + 1.96 * se_2020
+  )
+
+# 4. Graphique : barycentre des richesses maximales avec IC
+ggplot() +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red", linewidth = 1) +
+  
+  geom_point(data = summary_max, aes(x = mean_2025, y = mean_2020), 
+             size = 5, shape = 18, color = "blue", stroke = 1.5) +
+  
+  geom_errorbarh(data = summary_max, 
+                 aes(y = mean_2020, xmin = ic_lower_2025, xmax = ic_upper_2025), 
+                 height = 0.3, size = 1, color = "blue") +
+  
+  geom_errorbar(data = summary_max, 
+                aes(x = mean_2025, ymin = ic_lower_2020, ymax = ic_upper_2020), 
+                width = 0.3, size = 1, color = "blue") +
+  
+  coord_fixed(ratio = 1, xlim = c(0, 10), ylim = c(0, 10), expand = TRUE) +
+  
+  labs(
+    title = "Richesse spécifique maximale par site (barycentre avec IC)",
+    x = "2025",
+    y = "2020"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.grid.major = element_line(color = "grey60", size = 0.6),
+    panel.grid.minor = element_line(color = "grey80", size = 0.3),
+    panel.border = element_rect(color = "black", fill = NA, size = 0.8),
+    axis.line = element_line(color = "black", size = 0.8)
+  )
+
+
+
+
 ##AFC ####
 
 #Transformation des datas avec Hellinger
 data_afc = Macro_Ptscontacts[, -c(19, 22)]
 data_afc_clean = data_afc %>% mutate(across(everything(), ~replace_na(.x, 0)))
-meta = data_afc_clean %>% select(Annee, Site, ID_LAG)
-data_num = data_afc_clean %>% select(-Annee, -Site, -ID_LAG)
+meta = data_afc_clean %>% dplyr::select(Annee, Site, ID_LAG)
+data_num = data_afc_clean %>% dplyr::select(-Annee, -Site, -ID_LAG)
 data_hellinger = decostand(data_num, method = "hellinger")
 
 #Faire l'ACP sur données transformées
