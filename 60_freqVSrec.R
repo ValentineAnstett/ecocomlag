@@ -3,7 +3,7 @@ getwd()
 setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Macrophytes_/Data/Raw")
 Macro2025 = read_xlsx("macrophytes_2025.xlsx")
 
-#Tester si la fréquence est corrélée au recouvrement
+###Tester si la fréquence est corrélée au recouvrement----
 
 Macro2025_clean = Macro2025 [,-c(1,3,4,22)]
 colnames(Macro2025_clean) = sub("_ABS_COV$", "", colnames(Macro2025_clean))
@@ -12,7 +12,7 @@ Macro2025_clean = Macro2025_clean %>%
   filter(rowSums(select(., -LAGUNE)) > 0)
 
 library(tidyverse)
-####Reorganiser mon data frame ####
+####  Reorganiser mon data frame ####
 df_long = Macro2025_clean %>%
   pivot_longer(-LAGUNE, names_to = "Espece", values_to = "Recouvrement")
 
@@ -28,10 +28,9 @@ df_result_clean = df_result %>%
 
 print(df_result_clean)
 
-####Relation Fréquence et Recouvrement ####
+####  Relation Fréquence et Recouvrement ####
 
-
-r2_df <- df_result_clean %>%
+r2_df = df_result_clean %>%
   group_by(Espece) %>%
   summarise(
     model = list(lm(Frequence ~ Recouvrement_Total)),
@@ -43,11 +42,11 @@ r2_df <- df_result_clean %>%
   select(Espece, Espece_r2)
 
 # Joindre cette info au df original
-df_r2 <- df_result_clean %>%
+df_r2 = df_result_clean %>%
   left_join(r2_df, by = "Espece")
 
 # Convertir en facteur pour que ggplot utilise le nouveau nom
-df_r2$Espece_r2 <- factor(df_r2$Espece_r2, levels = unique(df_r2$Espece_r2))
+df_r2$Espece_r2 = factor(df_r2$Espece_r2, levels = unique(df_r2$Espece_r2))
 
 ggplot(df_r2, aes(x = Recouvrement_Total, y = Frequence, color = Espece_r2)) +
   geom_point(size = 2, alpha = 0.7) +
@@ -60,3 +59,12 @@ ggplot(df_r2, aes(x = Recouvrement_Total, y = Frequence, color = Espece_r2)) +
     color = "Espèce (R²)"
   )
 
+###Créer un nouveau dataframe avec indices de présence pour 2020 et 2025 
+
+Macro_Ptscontacts = df_result %>%
+  mutate(indice_sp = Frequence / 20)
+
+
+
+# Importer dans processed 
+write.csv(Macro_Ptscontacts, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_Macro/Macro_Ptscontacts.csv", row.names = FALSE)
