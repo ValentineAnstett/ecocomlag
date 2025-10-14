@@ -156,7 +156,7 @@ df_model = tbi_result %>%
 modele_TBI = lm(change ~ ., data = df_model %>% dplyr::select(-ID_LAG, -TBI, -p_value, -pertes, -gains))
 summary(modele_TBI)
 
-par(mfrow = c(2, 2))  # 4 graphiques en 1
+par(mfrow = c(1, 1))  # 4 graphiques en 1
 plot(df_model)
 
 # Simplification du modèle
@@ -172,7 +172,7 @@ plot(modele_simplifie)
 variables = c("P2O5_TOT", "CAILLOUX", "LIMONS", "temperature", "hauteur_eau", "salinite")
 
 for (var in variables) {
-  p = ggplot(modele_simplifie, aes_string(x = var, y = "change")) +
+  p = ggplot(modele_TBI, aes_string(x = var, y = "change")) +
     geom_point() +
     geom_smooth(method = "lm", se = TRUE, color = "blue") +
     labs(title = paste("Relation entre", var, "et change"),
@@ -184,9 +184,9 @@ for (var in variables) {
 
 #2 : les 4 significatifs ensembles 
 
-vars_subset <- c("LIMONS", "salinite", "CAILLOUX", "temperature")
-plots <- lapply(vars_subset, function(var) {
-  ggplot(df_model, aes_string(x = var, y = "change")) +
+vars_subset = c("LIMONS", "salinite", "CAILLOUX", "temperature")
+plots = lapply(vars_subset, function(var) {
+  ggplot(modele_TBI, aes_string(x = var, y = "change")) +
     geom_point() +
     geom_smooth(method = "lm", se = TRUE, color = "blue") +
     labs(title = paste("Relation entre", var, "et change"),
