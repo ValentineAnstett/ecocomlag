@@ -215,7 +215,7 @@ for (var in variables) {
   }
 }
 
-####NUAGE DE POINTS : tous les sites regroupés ----
+####NUAGE DE POINTS = tous les sites regroupés ----
 
 Compo = colnames(Sol)[!(colnames(Sol) %in% c("Annee", "Site", "ID_LAG"))]
 
@@ -440,7 +440,7 @@ faire_permanova = function(data, colonnes_compo, facteurs, sites_a_exclure = NUL
 
 
 #Chimique 
-resultats_permanova_chimique <- faire_permanova(
+resultats_permanova_chimique = faire_permanova(
   data = Chimique,
   colonnes_compo = vars_chimique,
   facteurs = c("Annee", "Site"),
@@ -450,7 +450,7 @@ resultats_permanova_chimique <- faire_permanova(
 print(resultats_permanova_chimique)
 
 #Structure du sol 
-resultats_permanova_sol <- faire_permanova(
+resultats_permanova_sol = faire_permanova(
   data = Sol,
   colonnes_compo = vars_sol,
   facteurs = c("Annee", "Site"),
