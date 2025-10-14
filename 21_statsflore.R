@@ -201,6 +201,11 @@ tbi_result = data.frame(
 
 
 #### Graphs TBI ----
+tbi_result = tbi_result %>%
+  left_join(Macro_T1 %>% dplyr::select(ID_LAG, Site), by = "ID_LAG")
+tbi_result_sorted = tbi_result %>%
+  arrange(desc(change))
+
 #1
 plot(tbi_result)
 text(tbi_result$BCD.mat[, "B/(2A+B+C)"], tbi_result$BCD.mat[, "C/(2A+B+C)"],
@@ -293,10 +298,16 @@ ggplot(tbi_result, aes(x = pertes, y = gains, label = ID_LAG)) +
   geom_density_2d(color = "red") + 
   geom_point(size = 3, color = "grey") +
   geom_text_repel(vjust = -0.5, size = 3) +
-  labs(title = "Pertes vs Gains d'espèces par site avec contours de densité",
-       x = "Pertes (B/(2A+B+C))",
-       y = "Gains (C/(2A+B+C))") +
-  theme_minimal()
+  labs(
+    title = "Pertes vs Gains d'espèces par site avec contours de densité",
+    x = "Pertes (B/(2A+B+C))",
+    y = "Gains (C/(2A+B+C))"
+  ) +
+  coord_cartesian(xlim = c(0, 1), ylim = c(0, 1), expand = FALSE) +  # ⬅️ cadre qui colle aux axes
+  theme_minimal() +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, size = 1)
+  )
 
 #9 : Heatmap de densité
 
@@ -316,6 +327,42 @@ ggplot(tbi_result, aes(x = pertes, y = gains)) +
        x = "Pertes (B/(2A+B+C))",
        y = "Gains (C/(2A+B+C))") +
   theme_minimal()
+
+#avec contours et les lignes 
+ggplot(tbi_result, aes(x = pertes, y = gains)) +
+  geom_density_2d_filled(alpha = 0.8, bins = niveaux) +
+  scale_fill_manual(values = palette_vert_rouge, name = "Density") +
+  geom_abline(slope = 1, intercept = 0, color = "black", linetype = "solid", size = 1) +
+  geom_abline(slope = 1, intercept = delta, color = "red", linetype = "dotted", size = 2) +
+  geom_point(size = 3, color = "grey") +
+  geom_point(data = tbi_result %>% filter(pertes == 0 | gains == 0),
+             aes(x = pertes, y = gains),
+             color = "gray", size = 3, inherit.aes = FALSE) +
+  geom_text_repel(aes(label = ID_LAG), vjust = -0.5, size = 3) +
+  scale_x_continuous(expand = c(0, 0), limits = c(0, 1)) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 1)) +
+  
+  coord_cartesian() +
+  labs(
+    title = "Changes in dissimilarity (TBI) with density heatmap",
+    x = "Losses (B / (2A + B + C))",
+    y = "Gains (C / (2A + B + C))"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, size = 1),
+    panel.grid = element_blank(),
+    legend.position = "right",
+    legend.direction = "vertical",
+    legend.key.width = unit(1, "cm"),
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    axis.title.x = element_text(margin = margin(t = 15))
+  ) +
+  guides(
+    fill = guide_legend(ncol = 1)
+  )
+
 
 
 ####Sites les plus changés ----
