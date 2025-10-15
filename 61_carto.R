@@ -15,9 +15,9 @@ Macro_Ptscontacts_GPS <- Macro_Ptscontacts_GPS %>%
   )
 
 
-species_cols <- names(Macro_Ptscontacts_GPS)[!(names(Macro_Ptscontacts_GPS) %in% c("Annee", "Site", "ID_LAG", "Lon", "Lat"))]
+species_cols = names(Macro_Ptscontacts_GPS)[!(names(Macro_Ptscontacts_GPS) %in% c("Annee", "Site", "ID_LAG", "Lon", "Lat"))]
 
-agg_by_year <- Macro_Ptscontacts_GPS %>%
+agg_by_year = Macro_Ptscontacts_GPS %>%
   group_by(ID_LAG, Annee) %>%
   summarise(
     across(all_of(species_cols), ~ max(., na.rm = TRUE)),
