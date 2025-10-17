@@ -129,7 +129,7 @@ print(significatives)
 
 #Representation graphique 
 especes_signif = c("Ruppia.maritima", "Althenia.filiformis", 
-                    "Riella.helicophylla", "Tolypella.salina")
+                    "Lamprothamnium.papulosum")
 
 df_plot = df_sub[, c("Annee", especes_signif)]
 
@@ -222,7 +222,7 @@ plot(tbi_result)
 text(tbi_result$BCD.mat[, "B/(2A+B+C)"], tbi_result$BCD.mat[, "C/(2A+B+C)"],
      labels = ID_LAG_vecteur, pos = 3, cex = 0.8)
 #2
-plot(result$BCD.mat[, "B/(2A+B+C)"],  # pertes
+plot(result$BCD.mat[, "B/(2A+B+C)"],  # pertes (losses)
      result$BCD.mat[, "C/(2A+B+C)"],  # gains
      xlab = "Losses (B / (2A+B+C))",
      ylab = "Gains (C / (2A+B+C))",
@@ -230,10 +230,11 @@ plot(result$BCD.mat[, "B/(2A+B+C)"],  # pertes
      pch = 19, col = "grey",
      xlim = c(0,1),
      ylim = c(0,1)
-     )
+)
 
+# Utiliser tbi_result$ID_LAG pour les labels
 text(result$BCD.mat[, "B/(2A+B+C)"], result$BCD.mat[, "C/(2A+B+C)"],
-     labels = rownames(result$BCD.mat), pos = 3, cex = 0.7)
+     labels = tbi_result$ID_LAG, pos = 3, cex = 0.7)
 
 abline(a = 0, b = 1, col = "lightgreen", lty = 1, lwd = 2)
 
@@ -243,9 +244,14 @@ abline(a = 0, b = 1, col = "lightgreen", lty = 1, lwd = 2)
 #y_preds = predict(loess_fit, newdata = x_vals)
 #lines(x_vals, y_preds, col = "darkblue", lwd = 2)
 
-#Ligne de déviance 
+# Ligne de déviance 
 delta = mean(result$BCD.mat[, "C/(2A+B+C)"] - result$BCD.mat[, "B/(2A+B+C)"], na.rm = TRUE)
 abline(a = delta, b = 1, col = "red", lty = 3, lwd = 2)
+
+#Annexe des détails de chaque lag 
+write.csv(tbi_result[, c("ID_LAG", "change")], 
+          file = "tbi_change_summary.csv", 
+          row.names = FALSE)
 
 #4
 df_long = tbi_result %>%
@@ -402,9 +408,9 @@ ggplot(tbi_result_sorted, aes(x = reorder(ID_LAG, change), y = change, fill = Si
 #2 : Par sites 
 
 tbi_result = tbi_result %>%
-  mutate(Site = factor(Site, levels = names(sort(tapply(change, Site, median), decreasing = TRUE))))
+  mutate(Site.x = factor(Site.x, levels = names(sort(tapply(change, Site.x, median), decreasing = TRUE))))
 
-ggplot(tbi_result, aes(x = Site, y = change)) +
+ggplot(tbi_result, aes(x = Site.x, y = change)) +
   geom_boxplot(fill = "#A6D8A8", color = "black") +
   geom_jitter(width = 0.2, alpha = 0.6, color = "darkblue") +
   geom_hline(yintercept = 0, color = "grey80", size = 0.5) +
@@ -414,5 +420,5 @@ ggplot(tbi_result, aes(x = Site, y = change)) +
     y = "TBI - Total Dissimilarity"
   ) +
   theme_minimal(base_size = 18) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  theme(axis.text.x = element_text(angle = 0 , hjust = 1))
 
