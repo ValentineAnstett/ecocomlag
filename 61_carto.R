@@ -76,9 +76,8 @@ carto_macrophytes
 htmlwidgets::saveWidget(carto_macrophytes, "carto_macrophytes.html", selfcontained = TRUE)
 
 
-
-
 #### Carte article -----
+# Préparation des données : moyenne des coordonnées par site
 sites_coord <- Macro_Ptscontacts_GPS %>%
   group_by(Site) %>%
   summarise(
@@ -88,6 +87,10 @@ sites_coord <- Macro_Ptscontacts_GPS %>%
   ) %>%
   filter(!is.na(Lon), !is.na(Lat))
 
+# Séparer les sites pour positionner les labels
+sites_label_top <- sites_coord %>% filter(!Site %in% c("A", "C", "F"))
+sites_label_bottom <- sites_coord %>% filter(Site %in% c("A", "C", "F"))
+
 # Villes majeures
 villes_maj <- data.frame(
   nom = c("Marseille", "Montpellier", "Perpignan"),
@@ -95,23 +98,20 @@ villes_maj <- data.frame(
   lon = c(5.3698, 3.8777, 2.8948)
 )
 
-# Séparer les sites selon position des labels
-sites_label_top <- sites_coord %>% filter(!Site %in% c("LAP_SAL", "ORB_ORP", "PAL_FRO"))
-sites_label_bottom <- sites_coord %>% filter(Site %in% c("LAP_SAL", "ORB_ORP", "PAL_FRO"))
-
-# Carte
-carto_sites_simple <- leaflet() %>%
+# Carte simplifiée : tous les sites en cercles verts
+carto_sites_simple <- leaflet(sites_coord) %>%
   addProviderTiles(providers$Esri.WorldShadedRelief) %>%
+  
   addCircleMarkers(
-    data = sites_coord,
     lng = ~Lon,
     lat = ~Lat,
-    radius = 6,
+    radius = 5,
     color = "#1B263B",
     stroke = FALSE,
-    fillOpacity = 0.8,
+    fillOpacity = 0.7,
     popup = ~paste0("<strong>Site : </strong>", Site)
   ) %>%
+  
   # Labels au-dessus
   addLabelOnlyMarkers(
     data = sites_label_top,
@@ -120,15 +120,16 @@ carto_sites_simple <- leaflet() %>%
     label = ~Site,
     labelOptions = labelOptions(
       noHide = TRUE,
-      direction = 'top',
+      direction = "top",
       textOnly = TRUE,
       style = list(
         "font-weight" = "bold",
-        "font-size" = "14px",
+        "font-size" = "22px",
         "color" = "#1B263B"
       )
     )
   ) %>%
+  
   # Labels en dessous
   addLabelOnlyMarkers(
     data = sites_label_bottom,
@@ -137,16 +138,17 @@ carto_sites_simple <- leaflet() %>%
     label = ~Site,
     labelOptions = labelOptions(
       noHide = TRUE,
-      direction = 'bottom',
+      direction = "bottom",
       textOnly = TRUE,
       style = list(
         "font-weight" = "bold",
-        "font-size" = "14px",
+        "font-size" = "22px",
         "color" = "#1B263B"
       )
     )
   ) %>%
-  # Villes majeures avec labels plus gros
+  
+  # Villes majeures
   addLabelOnlyMarkers(
     data = villes_maj,
     lng = ~lon,
@@ -154,22 +156,22 @@ carto_sites_simple <- leaflet() %>%
     label = ~nom,
     labelOptions = labelOptions(
       noHide = TRUE,
-      direction = 'top',
+      direction = "top",
       textOnly = TRUE,
       style = list(
         "font-weight" = "bold",
-        "font-size" = "18px",
+        "font-size" = "24px",
         "color" = "#333333"
       )
     )
   ) %>%
-  addScaleBar(position = "bottomleft", options = scaleBarOptions(imperial = FALSE)) %>%
-  addControl(
-    html = "<img src='https://raw.githubusercontent.com/deldersveld/topographic-map-symbols/master/north-arrow.png' height='50'>",
-    position = "topright"
-  )
+  
+  addScaleBar(position = "bottomleft", options = scaleBarOptions(imperial = FALSE))
 
+# Afficher la carte
 carto_sites_simple
+
+
 
 
 carte_globale = leaflet(sites_coord) %>%
