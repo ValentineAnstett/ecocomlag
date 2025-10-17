@@ -98,96 +98,49 @@ summary_df = df_n_sp %>%
   )
 
 # Graphique avec barycentre et IC
-ggplot(df_n_sp, aes(x = n_sp_2025, y = n_sp_2020, color = Site)) +
-  #geom_jitter(size = 3, width = 0.2, height = 0.2) +
+ggplot(df_n_sp, aes(x = n_sp_2020, y = n_sp_2025, color = Site)) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red", linewidth = 1) +
-  geom_point(data = summary_df, aes(x = mean_2025, y = mean_2020, color = Site), 
+  
+  geom_point(data = summary_df, aes(x = mean_2020, y = mean_2025, color = Site),
              size = 5, shape = 18, stroke = 1.5, inherit.aes = FALSE) +
-  geom_errorbarh(data = summary_df, 
-                 aes(y = mean_2020, xmin = ic_lower_2025, xmax = ic_upper_2025, color = Site), 
-                 height = 0.3, size = 1, inherit.aes = FALSE) +
-  geom_errorbar(data = summary_df, 
-                aes(x = mean_2025, ymin = ic_lower_2020, ymax = ic_upper_2020, color = Site), 
-                width = 0.3, size = 1, inherit.aes = FALSE) +
-  coord_fixed(ratio = 1, xlim = c(0, 10), ylim = c(0, 10), expand = TRUE) +
-  labs(
-    title = "Richesse spécifique par site",
-    x = "2025",
-    y = "2020",
-    color = "Site"
-  ) +
-  theme_minimal() +
-  theme(
-    panel.grid.major = element_line(color = "grey60", size = 0.6),
-    panel.grid.minor = element_line(color = "grey80", size = 0.3),
-    panel.border = element_rect(color = "black", fill = NA, size = 0.8),
-    axis.line = element_line(color = "black", size = 0.8)
-  )
-
-#### Richesse max par site ??? 
-
-# 1. Calcul de la richesse spécifique (nombre d'espèces > 0) par ligne
-Macro_Ptscontacts_sanstot <- Macro_Ptscontacts_sanstot %>%
-  rowwise() %>%
-  mutate(n_sp = sum(c_across(-c(Annee, Site, ID_LAG)) > 0, na.rm = TRUE)) %>%
-  ungroup()
-
-# 2. Sélection des richesses max par lagune (Site) et année
-df_richesse_max <- Macro_Ptscontacts_sanstot %>%
-  group_by(Site, Annee) %>%
-  summarise(max_richesse = max(n_sp, na.rm = TRUE), .groups = "drop") %>%
-  pivot_wider(names_from = Annee, values_from = max_richesse, names_prefix = "n_sp_")
-
-# Vérification : les colonnes devraient être n_sp_2020 et n_sp_2025
-# head(df_richesse_max)
-
-# 3. Calcul du barycentre et IC sur les max par site
-summary_max <- df_richesse_max %>%
-  summarise(
-    mean_2025 = mean(n_sp_2025),
-    mean_2020 = mean(n_sp_2020),
-    se_2025 = sd(n_sp_2025) / sqrt(n()),
-    se_2020 = sd(n_sp_2020) / sqrt(n()),
-    n = n()
-  ) %>%
-  mutate(
-    ic_lower_2025 = mean_2025 - 1.96 * se_2025,
-    ic_upper_2025 = mean_2025 + 1.96 * se_2025,
-    ic_lower_2020 = mean_2020 - 1.96 * se_2020,
-    ic_upper_2020 = mean_2020 + 1.96 * se_2020
-  )
-
-# 4. Graphique : barycentre des richesses maximales avec IC
-ggplot() +
-  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red", linewidth = 1) +
   
-  geom_point(data = summary_max, aes(x = mean_2025, y = mean_2020), 
-             size = 5, shape = 18, color = "blue", stroke = 1.5) +
+  geom_text(data = summary_df,
+            aes(x = mean_2020, y = mean_2025, label = Site, color = Site),
+            inherit.aes = FALSE,
+            fontface = "bold",
+            size = 5,
+            vjust = -0.8,  # au-dessus
+            hjust = -0.3) +  # légèrement à droite
   
-  geom_errorbarh(data = summary_max, 
-                 aes(y = mean_2020, xmin = ic_lower_2025, xmax = ic_upper_2025), 
-                 height = 0.3, size = 1, color = "blue") +
+  geom_errorbarh(data = summary_df,
+                 aes(y = mean_2025, xmin = ic_lower_2020, xmax = ic_upper_2020, color = Site),
+                 height = 0.3, linewidth = 1, inherit.aes = FALSE) +
   
-  geom_errorbar(data = summary_max, 
-                aes(x = mean_2025, ymin = ic_lower_2020, ymax = ic_upper_2020), 
-                width = 0.3, size = 1, color = "blue") +
+  geom_errorbar(data = summary_df,
+                aes(x = mean_2020, ymin = ic_lower_2025, ymax = ic_upper_2025, color = Site),
+                width = 0.3, linewidth = 1, inherit.aes = FALSE) +
   
-  coord_fixed(ratio = 1, xlim = c(0, 10), ylim = c(0, 10), expand = TRUE) +
+  # Axes fixes 0 à 5 sans marge, ticks à chaque entier
+  scale_x_continuous(limits = c(0, 5), breaks = 0:5, expand = c(0, 0)) +
+  scale_y_continuous(limits = c(0, 5), breaks = 0:5, expand = c(0, 0)) +
   
   labs(
-    title = "Richesse spécifique maximale par site (barycentre avec IC)",
-    x = "2025",
-    y = "2020"
+    x = "2020",
+    y = "2025"
   ) +
+  
+  guides(color = "none") +  # Supprime la légende
+  
   theme_minimal() +
   theme(
-    panel.grid.major = element_line(color = "grey60", size = 0.6),
-    panel.grid.minor = element_line(color = "grey80", size = 0.3),
-    panel.border = element_rect(color = "black", fill = NA, size = 0.8),
-    axis.line = element_line(color = "black", size = 0.8)
+    panel.grid.major = element_line(color = "grey60", linewidth = 0.6),
+    panel.grid.minor = element_line(color = "grey80", linewidth = 0.3),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.8),
+    axis.line = element_line(color = "black", linewidth = 0.8),
+    axis.title = element_text(size = 16, face = "bold"),
+    axis.text = element_text(size = 14),
+    plot.margin = margin(t = 10, r = 15, b = 10, l = 15)
   )
-
-
 
 
 ##AFC ####
@@ -261,10 +214,10 @@ ggplot(coord_ind, aes(x = Dim.1, y = Dim.2)) +
 
 #Sortir les outliers et refaire le graph par site : PAL_VIL_06 et 07 
 
-ggplot(coord_ind %>% filter(!ID_LAG %in% c("PAL_VIL_07", "PAL_VIL_06","ORB_MAI_04","ORB_MAI_05")), aes(x = Dim.1, y = Dim.2, color = Site)) +
+ggplot(coord_ind %>% filter(!ID_LAG %in% c("G_07", "G_06","D_04","D_05")), aes(x = Dim.1, y = Dim.2, color = Site)) +
   geom_point(size = 3, alpha = 0.8) +
   geom_polygon(
-    data = (coord_ind %>% filter(!ID_LAG %in% c("PAL_VIL_07", "PAL_VIL_06","ORB_MAI_04","ORB_MAI_05")) %>% group_by(Site) %>% group_modify(~get_hull(.x))),
+    data = (coord_ind %>% filter(!ID_LAG %in% c("G_07", "G_06","D_04","D_05")) %>% group_by(Site) %>% group_modify(~get_hull(.x))),
     aes(x = Dim.1, y = Dim.2, fill = Site),
     alpha = 0.15, color = NA, inherit.aes = FALSE
   ) +
@@ -279,9 +232,8 @@ ggplot(coord_ind %>% filter(!ID_LAG %in% c("PAL_VIL_07", "PAL_VIL_06","ORB_MAI_0
   geom_hline(yintercept = 0, linetype = "dotted", color = "grey40") +
   geom_vline(xintercept = 0, linetype = "dotted", color = "grey40") +
   labs(
-    title = "ACP sur données transformées Hellinger\navec lagunes colorées par site et flèches espèces",
-    x = "Dimension 1",
-    y = "Dimension 2"
+    x = "Dim 1",
+    y = "Dim 2"
   ) +
   theme_minimal() +
   theme(
