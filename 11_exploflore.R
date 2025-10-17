@@ -4,7 +4,11 @@
 getwd()
 setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_Macro")
 Macro_Ptscontacts= read.csv("Macro_Ptscontacts.csv", header = TRUE, sep = ",", dec=".")
-Macro_Ptscontacts_sanstot = Macro_Ptscontacts [, -19]
+Macro_Ptscontacts = Macro_Ptscontacts %>%
+  filter(!(ID_LAG %in% c("G_07", "G_06","D_04","D_05")))
+Macro_Ptscontacts = Macro_Ptscontacts[, colSums(Macro_Ptscontacts != 0, na.rm = TRUE) > 0]
+
+Macro_Ptscontacts_sanstot = Macro_Ptscontacts [, -15]
 
 
 ###  Boxplots 2020 vs 2025 ----
@@ -146,7 +150,7 @@ ggplot(df_n_sp, aes(x = n_sp_2020, y = n_sp_2025, color = Site)) +
 ##AFC ####
 
 #Transformation des datas avec Hellinger
-data_afc = Macro_Ptscontacts[, -c(19, 22)]
+data_afc = Macro_Ptscontacts_sanstot[,-15]
 data_afc_clean = data_afc %>% mutate(across(everything(), ~replace_na(.x, 0)))
 meta = data_afc_clean %>% dplyr::select(Annee, Site, ID_LAG)
 data_num = data_afc_clean %>% dplyr::select(-Annee, -Site, -ID_LAG)
@@ -165,54 +169,9 @@ coord_var = as.data.frame(pca_res$var$coord[, 1:2])
 colnames(coord_var) = c("Dim.1", "Dim.2")
 coord_var$Espece = rownames(coord_var)
 
-#### Graph avec polygone #### 
-
+#### Graph avec polygone avec les lagunes outliers sorties : 
 get_hull = function(df) df[chull(df$Dim.1, df$Dim.2), ]
 hulls = coord_ind %>% group_by(Site) %>% group_modify(~get_hull(.x))
-
-ggplot(coord_ind, aes(x = Dim.1, y = Dim.2, color = Site)) +
-  geom_point(size = 3, alpha = 0.8) +
-  geom_polygon(data = hulls, aes(x = Dim.1, y = Dim.2, fill = Site), alpha = 0.15, color = NA, inherit.aes = FALSE) +
-  geom_segment(data = coord_var, aes(x = 0, y = 0, xend = Dim.1, yend = Dim.2),
-               arrow = arrow(length = unit(0.2, "cm")), color = "black", inherit.aes = FALSE) +
-  geom_text_repel(data = coord_var, aes(x = Dim.1, y = Dim.2, label = Espece),
-                  color = "black", size = 5, inherit.aes = FALSE, max.overlaps = 20) +
-  geom_hline(yintercept = 0, linetype = "dotted", color = "grey40") +
-  geom_vline(xintercept = 0, linetype = "dotted", color = "grey40") +
-  labs(title = "ACP sur données transformées Hellinger\navec lagunes colorées par site et flèches espèces",
-       x = "Dimension 1",
-       y = "Dimension 2") +
-  theme_minimal() +
-  theme(
-    panel.border = element_rect(color = "black", fill = NA),
-    axis.line = element_line(color = "black"),
-    plot.title = element_text(size = 40, face = "bold"),       
-    axis.title = element_text(size = 30),                     
-    axis.text = element_text(size = 24),                      
-    legend.title = element_text(size = 28),                    
-    legend.text = element_text(size = 24),                     
-    strip.text = element_text(size = 28), 
-  )
-
-
-#Graph polygone mais par LAGUNE 
-
-group_circles = coord_ind %>%
-  group_by(ID_LAG) %>%
-  summarise(
-    x0 = mean(Dim.1),
-    y0 = mean(Dim.2),
-    r = max(sqrt((Dim.1 - mean(Dim.1))^2 + (Dim.2 - mean(Dim.2))^2)) + 0.1
-  )
-ggplot(coord_ind, aes(x = Dim.1, y = Dim.2)) +
-  geom_point(aes(color = ID_LAG), size = 3, alpha = 0.8) +
-  
-  geom_circle(data = group_circles, aes(x0 = x0, y0 = y0, r = r, fill = ID_LAG),
-              alpha = 0.15, color = NA, inherit.aes = FALSE) +
-  coord_fixed() +
-  theme_minimal()
-
-#Sortir les outliers et refaire le graph par site : PAL_VIL_06 et 07 
 
 ggplot(coord_ind %>% filter(!ID_LAG %in% c("G_07", "G_06","D_04","D_05")), aes(x = Dim.1, y = Dim.2, color = Site)) +
   geom_point(size = 3, alpha = 0.8) +
