@@ -4,30 +4,33 @@ setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Pro
 Macro_Ptscontacts= read.csv("Macro_Ptscontacts.csv", header = TRUE, sep = ",", dec=".")
 
 Macro_Ptscontacts = Macro_Ptscontacts %>%
-  filter(!(ID_LAG %in% c("PAL_VIL_07", "PAL_VIL_06","ORB_MAI_04","ORB_MAI_05"))) #Outliers
+  filter(!(ID_LAG %in% c("G_07", "G_06","D_04","D_05"))) #Outliers
+Macro_Ptscontacts = Macro_Ptscontacts[, colSums(Macro_Ptscontacts != 0, na.rm = TRUE) > 0]
 
-Macro_Ptscontacts_sanstot = Macro_Ptscontacts [, -19]
+
+Macro_Ptscontacts_sanstot = Macro_Ptscontacts [, -15]
+
 
 #Import dataset Envirr 
 getwd()
 setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data")
 Data_envir= read.csv("Data_envir.csv", header = TRUE, sep = ",", dec=".")
-Data_envir = Data_envir [, -c(12,13,17)]
 
 Data_envir = Data_envir %>%
-  filter(!(ID_LAG %in% c("PAL_VIL_07", "PAL_VIL_06","ORB_MAI_04","ORB_MAI_05"))) #Outliers
+  filter(!(ID_LAG %in% c("G_07", "G_06","D_04","D_05"))) #Outliers
 
+#Selection des variables 
+Data_envir = Data_envir %>%
+  dplyr::select(-CAILLOUX, -eau, -turbidite, -conductivite, -SABLES, -AZOTE_TOT)
 
 
 ### RDA ----
-#Sortir la colonne sable pour eviter une correlation entre les variables envir 
-Data_envir = Data_envir [, -11]
 
 #Preparer les données 
 df_merged = merge(Macro_Ptscontacts_sanstot, Data_envir, by = c("Annee", "Site", "ID_LAG"))
 
-Y = df_merged [, 4:20]  #Especes == variable a exploquer 
-X = df_merged [, 21:30] #Var envirr == variables explicatives 
+Y = df_merged [, 4:14]  #Especes == variable a exploquer 
+X = df_merged [, 15:22] #Var envirr == variables explicatives 
 
 #Nettoyer les donnes 
 complete_rows = complete.cases(Y, X)
@@ -146,6 +149,16 @@ tbi_result = data.frame(
 #Preparer les donnees envir
 envir_2020 = Data_envir %>% filter(Annee == 2020) %>% arrange(ID_LAG)
 envir_2025 = Data_envir %>% filter(Annee == 2025) %>% arrange(ID_LAG)
+envir_2020 = Data_envir %>%
+  filter(Annee == 2020) %>%
+  drop_na() %>%           # Supprime lignes avec NA
+  arrange(ID_LAG)
+
+envir_2025 = Data_envir %>%
+  filter(Annee == 2025) %>%
+  drop_na() %>%           # Supprime lignes avec NA
+  arrange(ID_LAG)
+
 ID_envir_communs = intersect(envir_2020$ID_LAG, envir_2025$ID_LAG)
 envir_2020 = envir_2020 %>% filter(ID_LAG %in% ID_envir_communs) %>% arrange(ID_LAG)
 envir_2025 = envir_2025 %>% filter(ID_LAG %in% ID_envir_communs) %>% arrange(ID_LAG)
@@ -177,7 +190,7 @@ plot(modele_simplifie)
 #### Graphs ----
 
 #1 : uns par uns 
-variables = c("P2O5_TOT", "CAILLOUX", "LIMONS", "temperature", "hauteur_eau", "salinite")
+variables = c("P2O5_TOT", "LIMONS", "temperature", "hauteur_eau", "salinite")
 
 for (var in variables) {
   p = ggplot(modele_TBI, aes_string(x = var, y = "change")) +
@@ -192,7 +205,7 @@ for (var in variables) {
 
 #2 : les 4 significatifs ensembles 
 
-vars_subset = c("LIMONS", "salinite", "CAILLOUX", "temperature")
+vars_subset = c("LIMONS", "salinite", "temperature")
 plots = lapply(vars_subset, function(var) {
   ggplot(modele_TBI, aes_string(x = var, y = "change")) +
     geom_point() +
@@ -202,7 +215,7 @@ plots = lapply(vars_subset, function(var) {
     theme_minimal()
 })
 # Afficher les 4 graphiques en 2x2
-(plots[[1]] | plots[[2]]) / (plots[[3]] | plots[[4]])
+(plots[[1]] | plots[[2]]) / (plots[[3]])
 
 
 ### LM sur TBI pertes ----
@@ -217,7 +230,7 @@ par(mfrow = c(2, 2))  # 4 graphiques en 1
 plot(modele_simplifie_pertes)
 
 #Graph 
-vars_subset_pertes = c("LIMONS", "salinite")
+vars_subset_pertes = c("LIMONS", "P2O5_TOT")
 plots_pertes = lapply(vars_subset_pertes, function(var) {
   ggplot(df_model, aes_string(x = var, y = "pertes")) +
     geom_point() +
