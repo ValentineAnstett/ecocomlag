@@ -90,6 +90,28 @@ Hydro_germi = Hydro_germi[,-1]
 
 Hydro_germi = Hydro_germi[,c(2,9,1,3:8)]
 
+
+#Mettre des lettres pour les sites 
+Hydro_germi = Hydro_germi %>%
+  mutate(Site = recode(Site,
+                       "LAP_SAL" = "A",
+                       "SIG_GSA" = "B",
+                       "ORB_ORP" = "C",
+                       "ORB_MAI" = "D",
+                       "BAG_PET" = "E",
+                       "PAL_FRO" = "F",
+                       "PAL_VIL" = "G",
+                       "EOR_MOT" = "H",
+                       "PCA_CAP" = "I",
+                       "GCA_RNC" = "J",
+                       "FOS_REL" = "K"))
+
+#Adapter dans la colonne ID_LAG les nouveaux codes sites 
+Hydro_germi = Hydro_germi %>%
+  mutate(ID_LAG = paste0(Site, "_", sub(".*_", "", ID_LAG)))
+
+
+
 # Importer dans processed 
 write.csv(Hydro_germi, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_hydro/Hydro_germi.csv", row.names = FALSE)
 
@@ -128,6 +150,25 @@ Sol = Sol[, -c(10:13)]
 
 #Mettre 2020 à la place de 2021 pour fit les autres dataframe 
 Sol$Annee[Sol$Annee == 2021] = 2020
+
+#Mettre des lettres pour les sites 
+Sol = Sol %>%
+  mutate(Site = recode(Site,
+                       "LAP_SAL" = "A",
+                       "SIG_GSA" = "B",
+                       "ORB_ORP" = "C",
+                       "ORB_MAI" = "D",
+                       "BAG_PET" = "E",
+                       "PAL_FRO" = "F",
+                       "PAL_VIL" = "G",
+                       "EOR_MOT" = "H",
+                       "PCA_CAP" = "I",
+                       "GCA_RNC" = "J",
+                       "FOS_REL" = "K"))
+
+#Adapter dans la colonne ID_LAG les nouveaux codes sites 
+Sol = Sol %>%
+  mutate(ID_LAG = paste0(Site, "_", sub(".*_", "", ID_LAG)))
 
 # Importer dans processed 
 write.csv(Sol, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_sol/Sol.csv", row.names = FALSE)
@@ -291,6 +332,24 @@ Macro_Ptscontacts = Macro_Ptscontacts %>%
     Annee = annee,
     ID_LAG = LAGUNE
   )
+
+#Mettre des lettres pour les sites 
+Macro_Ptscontacts = Macro_Ptscontacts %>%
+  mutate(Site = recode(Site,
+                       "LAP_SAL" = "A",
+                       "SIG_GSA" = "B",
+                       "ORB_ORP" = "C",
+                       "ORB_MAI" = "D",
+                       "BAG_PET" = "E",
+                       "PAL_FRO" = "F",
+                       "PAL_VIL" = "G",
+                       "EOR_MOT" = "H",
+                       "PCA_CAP" = "I",
+                       "GCA_RNC" = "J",
+                       "FOS_REL" = "K"))
+#Adapter dans la colonne ID_LAG les nouveaux codes sites 
+Macro_Ptscontacts = Macro_Ptscontacts %>%
+  mutate(ID_LAG = paste0(Site, "_", sub(".*_", "", ID_LAG)))
 
 #Enregistrer
 write.csv(Macro_Ptscontacts, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_Macro/Macro_Ptscontacts.csv", row.names = FALSE)
