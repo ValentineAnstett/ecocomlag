@@ -359,66 +359,35 @@ write.csv(Macro_Ptscontacts, file = "/home/anstett/Documents/LTM-Flora/Analyses_
 
 
 
+#Data sélection des variables ----
+
+#Regarder les sites qui ont des cortèges très différents 
+data_envir 
+
+vars_env = data_envir%>%
+  dplyr::select(where(is.numeric)) %>%
+  dplyr::select(-Annee)
+vars_env_filtered <- vars_env[, sapply(vars_env, function(x) sd(x, na.rm = TRUE) > 0)]
+vars_env_filtered
+
+cor_matrix <- cor(vars_env, use = "complete.obs")
+corrplot(cor_matrix, method = "color", type = "upper", 
+         tl.cex = 0.8, tl.col = "black", addCoef.col = "black")
 
 
+df_env_long <- data_envir %>%
+  pivot_longer(cols = -c(Annee, Site, ID_LAG), names_to = "variable", values_to = "valeur")
 
+ggplot(df_env_long, aes(x = valeur)) +
+  geom_histogram(bins = 30, fill = "#69b3a2", color = "white") +
+  facet_wrap(~variable, scales = "free") +
+  theme_minimal() +
+  labs(title = "Distribution (global) des variables environnementales")
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-####DATA HYDRO MENSUELLE####
-getwd()
-setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_hydro")
-Hydro = read.csv("Hydro_Finale_19_23_25.csv", header = TRUE, sep = ",", dec=",")
-Hydro$date_releve =  as.Date(Hydro$date_releve)
-Hydro$date_releve = as.Date(format(Hydro$date_releve, "%Y-%m-01"))
-
-Hydro = Hydro %>%
-  mutate(hauteur_eau = ifelse(eau == "Non", 0, hauteur_eau))
-Hydro = Hydro %>%
-  mutate(hauteur_eau = ifelse(eau == "non", 0, hauteur_eau))
-
-
-#Ne garder que les sites suivis mensuellement en 2020+2023+2025
-codes_a_garder = c(
-  # SIG_GSA
-  "SIG_GSA_01", "SIG_GSA_04", "SIG_GSA_06", "SIG_GSA_07", "SIG_GSA_08", "SIG_GSA_09", "SIG_GSA_10",
-  
-  # ORB_ORP
-  "ORB_ORP_01", "ORB_ORP_03", "ORB_ORP_05", "ORB_ORP_06", "ORB_ORP_08",
-  
-  # BAG_PET
-  "BAG_PET_01", "BAG_PET_02", "BAG_PET_03", "BAG_PET_04", "BAG_PET_05", "BAG_PET_06", "BAG_PET_07", "BAG_PET_08", "BAG_PET_11",
-  
-  # EOR_MOT
-  "EOR_MOT_04", "EOR_MOT_05", "EOR_MOT_06", "EOR_MOT_07", "EOR_MOT_08", "EOR_MOT_10",
-  
-  # GCA_RNC
-  "GCA_RNC_01", "GCA_RNC_03", "GCA_RNC_06", "GCA_RNC_07", "GCA_RNC_08", "GCA_RNC_09", "GCA_RNC_10",
-  
-  # FOS_REL
-  "FOS_REL_05", "FOS_REL_07", "FOS_REL_08", "FOS_REL_09", "FOS_REL_10"
-)
-
-Hydro_mens = Hydro[Hydro$code %in% codes_a_garder, ]
-
-
-
-Hydro_mens = Hydro_mens[,-c(3,7,13)]
-
-# Importer dans processed 
-write.csv(Hydro_mens, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_hydro/Hydro_mens.csv", row.names = FALSE)
-
+ggplot(df_env_long, aes(x = Site, y = valeur, fill = Site)) +
+  geom_boxplot(outlier.color = "red", alpha = 0.7) +
+  facet_wrap(~variable, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Distribution des variables environnementales par site") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(fill = "none")  # Enlève la légende si inutile
