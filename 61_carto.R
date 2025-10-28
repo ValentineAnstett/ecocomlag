@@ -18,7 +18,7 @@ Macro_Ptscontacts_GPS <- Macro_Ptscontacts_GPS %>%
 species_cols = names(Macro_Ptscontacts_GPS)[!(names(Macro_Ptscontacts_GPS) %in% c("Annee", "Site", "ID_LAG", "Lon", "Lat"))]
 
 agg_by_year <- Macro_Ptscontacts_GPS %>%
-  group_by(ID_LAG, Annee) %>%
+  group_by(ID_LAG, Site, Annee) %>%  # ← Ajout de Site ici
   summarise(
     across(
       all_of(species_cols),
@@ -61,6 +61,13 @@ carto_macrophytes <- leaflet(agg_by_year %>% filter(!is.na(Lat), !is.na(Lon_jitt
       "<strong>ID_LAG : </strong>", ID_LAG, "<br>",
       "<strong>Année : </strong>", Annee, "<br>",
       "<strong>Espèces présentes : </strong>", especes_presentes
+    ),
+    label = ~paste0("Site : ", Site),  # ← ici, ajout du label
+    labelOptions = labelOptions(
+      noHide = TRUE,
+      direction = "auto",
+      textsize = "13px",
+      style = list("font-weight" = "bold", "color" = "#333")
     )
   ) %>%
   addLegend(
@@ -77,7 +84,11 @@ htmlwidgets::saveWidget(carto_macrophytes, "carto_macrophytes.html", selfcontain
 
 
 #### Carte article -----
-# Préparation des données : moyenne des coordonnées par site
+# --- Lire et préparer le shapefile des côtes ---
+cotes_lines <- st_read("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Terre_Mer/SHAPE/Limite_terre-mer_facade_Mediterranee_ligne.shp") %>%
+  st_transform(4326)  # reprojection WGS84 pour Leaflet
+
+# --- Préparer les coordonnées des sites ---
 sites_coord <- Macro_Ptscontacts_GPS %>%
   group_by(Site) %>%
   summarise(
@@ -87,29 +98,57 @@ sites_coord <- Macro_Ptscontacts_GPS %>%
   ) %>%
   filter(!is.na(Lon), !is.na(Lat))
 
-# Séparer les sites pour positionner les labels
 sites_label_top <- sites_coord %>% filter(!Site %in% c("A", "C", "F"))
 sites_label_bottom <- sites_coord %>% filter(Site %in% c("A", "C", "F"))
 
-# Villes majeures
+# --- Villes majeures ---
 villes_maj <- data.frame(
   nom = c("Marseille", "Montpellier", "Perpignan"),
   lat = c(43.2965, 43.6119, 42.6887),
   lon = c(5.3698, 3.8777, 2.8948)
 )
 
-# Carte simplifiée : tous les sites en cercles verts
-carto_sites_simple <- leaflet(sites_coord) %>%
+# --- Groupes de sites ---
+sites_croix <- c("C", "D", "H", "I", "J")
+sites_cercles <- sites_coord %>% filter(!Site %in% sites_croix)
+sites_croix_df <- sites_coord %>% filter(Site %in% sites_croix)
+
+carto_sites_simple <- leaflet(sites_coord, options = leafletOptions(zoomControl = FALSE)) %>%
+  
+  # Fond de carte Esri Shaded Relief
   addProviderTiles(providers$Esri.WorldShadedRelief) %>%
   
+  # Trait de côte noir fin
+  addPolylines(data = cotes_lines, color = "#1B263B", weight = 1) %>%
+  
+  # Cercles pour les autres sites
   addCircleMarkers(
+    data = sites_cercles,
     lng = ~Lon,
     lat = ~Lat,
-    radius = 5,
-    color = "#1B263B",
+    radius = 6,
+    color = "black",
     stroke = FALSE,
-    fillOpacity = 0.7,
+    fillOpacity = 0.8,
     popup = ~paste0("<strong>Site : </strong>", Site)
+  ) %>%
+  
+  # Croix noires sans bulle
+  addLabelOnlyMarkers(
+    data = sites_croix_df,
+    lng = ~Lon,
+    lat = ~Lat,
+    label = "×",
+    labelOptions = labelOptions(
+      noHide = TRUE,
+      textOnly = TRUE,
+      style = list(
+        "font-weight" = "bold",
+        "font-size" = "30px",
+        "color" = "black",
+        "text-shadow" = "0 0 3px white"
+      )
+    )
   ) %>%
   
   # Labels au-dessus
@@ -166,13 +205,18 @@ carto_sites_simple <- leaflet(sites_coord) %>%
     )
   ) %>%
   
-  addScaleBar(position = "bottomleft", options = scaleBarOptions(imperial = FALSE))
+  # Échelle agrandie
+  addScaleBar(
+    position = "bottomleft",
+    options = scaleBarOptions(
+      imperial = FALSE,
+      maxWidth = 400,
+      updateWhenIdle = FALSE
+    )
+  )
 
-# Afficher la carte
+# Affichage
 carto_sites_simple
-
-
-
 
 carte_globale = leaflet(sites_coord) %>%
   addProviderTiles(providers$Esri.WorldGrayCanvas)
