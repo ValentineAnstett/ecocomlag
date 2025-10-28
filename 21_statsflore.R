@@ -252,6 +252,9 @@ abline(a = delta, b = 1, col = "red", lty = 3, lwd = 2)
 write.csv(tbi_result[, c("ID_LAG", "change")], 
           file = "tbi_change_summary.csv", 
           row.names = FALSE)
+
+
+
 #avec test de signi
 # Calcul des gains, pertes et delta
 losses <- result$BCD.mat[, "B/(2A+B+C)"]
@@ -263,13 +266,19 @@ delta <- mean(diff_CB, na.rm = TRUE)
 test_result <- wilcox.test(diff_CB, mu = 0)
 
 # Création du scatter plot
+# Ajuster les marges : c(bottom, left, top, right)
+par(mar = c(5, 6, 4, 2))  # augmenter la marge gauche pour le ylab
+
+# Création du scatter plot
 plot(losses, gains,
      xlab = "Losses (B / (2A+B+C))",
      ylab = "Gains (C / (2A+B+C))",
      main = "Changes in dissimilarity (TBI)",
      pch = 19, col = "grey",
-     xlim = c(0,1),
-     ylim = c(0,1))
+     xlim = c(0, 1), ylim = c(0, 1),
+     xaxs = "i", yaxs = "i",  # <- pas d'extension des axes
+     cex = 1.5, cex.lab = 1.8, cex.axis = 1.5, cex.main = 2
+)
 
 # Ligne d'égalité (y = x)
 abline(a = 0, b = 1, col = "lightgreen", lty = 1, lwd = 2)
@@ -281,7 +290,7 @@ abline(a = delta, b = 1, col = "red", lty = 3, lwd = 2)
 legend("topleft", 
        legend = paste0("delta = ", round(delta, 3), 
                        "\nWilcox p = ", signif(test_result$p.value, 3)),
-       bty = "n", cex = 0.9)
+       bty = "n", cex = 2)
 
 
 
