@@ -102,29 +102,22 @@ summary_df = df_n_sp %>%
   )
 
 # Graphique avec barycentre et IC
+
 ggplot(df_n_sp, aes(x = n_sp_2020, y = n_sp_2025, color = Site)) +
-  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red", linewidth = 1) +
-  
-  geom_point(data = summary_df, aes(x = mean_2020, y = mean_2025, color = Site),
-             size = 5, shape = 18, stroke = 1.5, inherit.aes = FALSE) +
-  
-  geom_text(data = summary_df,
-            aes(x = mean_2020, y = mean_2025, label = Site, color = Site),
-            inherit.aes = FALSE,
-            fontface = "bold",
-            size = 5,
-            vjust = -0.8,  # au-dessus
-            hjust = -0.3) +  # légèrement à droite
-  
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed",
+              color = "red", linewidth = 1) +
   geom_errorbarh(data = summary_df,
                  aes(y = mean_2025, xmin = ic_lower_2020, xmax = ic_upper_2020, color = Site),
                  height = 0.3, linewidth = 1, inherit.aes = FALSE) +
-  
   geom_errorbar(data = summary_df,
                 aes(x = mean_2020, ymin = ic_lower_2025, ymax = ic_upper_2025, color = Site),
                 width = 0.3, linewidth = 1, inherit.aes = FALSE) +
-  
-  # Axes fixes 0 à 5 sans marge, ticks à chaque entier
+  geom_point(data = summary_df,
+             aes(x = mean_2020, y = mean_2025, color = Site),
+             shape = 21, fill = "white", size = 8, stroke = 2, inherit.aes = FALSE) +
+  geom_text(data = summary_df,
+            aes(x = mean_2020, y = mean_2025, label = Site),
+            color = "black", fontface = "bold", size = 5, inherit.aes = FALSE) +
   scale_x_continuous(limits = c(0, 5), breaks = 0:5, expand = c(0, 0)) +
   scale_y_continuous(limits = c(0, 5), breaks = 0:5, expand = c(0, 0)) +
   
@@ -132,20 +125,18 @@ ggplot(df_n_sp, aes(x = n_sp_2020, y = n_sp_2025, color = Site)) +
     x = "2020",
     y = "2025"
   ) +
-  
-  guides(color = "none") +  # Supprime la légende
+  guides(color = "none") +
   
   theme_minimal() +
   theme(
-    panel.grid.major = element_line(color = "grey60", linewidth = 0.6),
-    panel.grid.minor = element_line(color = "grey80", linewidth = 0.3),
+    panel.grid.major = element_line(color = "grey70", linewidth = 0.6),
+    panel.grid.minor = element_blank(), 
     panel.border = element_rect(color = "black", fill = NA, linewidth = 0.8),
     axis.line = element_line(color = "black", linewidth = 0.8),
-    axis.title = element_text(size = 16, face = "bold"),
-    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 22, face = "bold"),
+    axis.text = element_text(size = 18),
     plot.margin = margin(t = 10, r = 15, b = 10, l = 15)
   )
-
 
 ##AFC ####
 
@@ -248,4 +239,72 @@ ggplot(coord_ind %>% filter(!ID_LAG %in% c("G_07", "G_06","D_04","D_05")),
     legend.text = element_text(size = 24),
     strip.text = element_text(size = 28),
   )
+
+
+#FacetPlot 
+# --- Données initiales : filtrage des années + passage en long format ---
+Data_facet <- Macro_Ptscontacts %>%
+  filter(Annee %in% c(2020, 2025)) %>%
+  pivot_longer(
+    cols = -c(Annee, Site, ID_LAG),
+    names_to = "Espece",
+    values_to = "Score"
+  )
+
+# --- Création des bins de score, à partir de 0.1 ---
+Data_facet <- Data_facet %>%
+  filter(!is.na(Score)) %>%
+  mutate(Score_bin = cut(
+    Score,
+    breaks = seq(0.1, 1, by = 0.1),
+    include.lowest = TRUE,
+    right = FALSE
+  )) %>%
+  filter(!is.na(Score_bin))
+# --- Séparation TOT vs espèces ---
+df_especes_facet <- Data_facet %>% filter(Espece != "TOT")
+df_tot_facet     <- Data_facet %>% filter(Espece == "TOT")
+
+# --- Liste des espèces ---
+liste_especes_facet <- unique(df_especes_facet$Espece)
+
+# --- Réplication des scores TOT dans chaque facette d'espèce ---
+df_tot_replique <- expand_grid(
+  Espece = liste_especes_facet,
+  Score_bin = levels(Data_facet$Score_bin)
+) %>%
+  left_join(
+    df_tot_facet %>%
+      group_by(Score_bin) %>%
+      summarise(n = n(), .groups = "drop"),
+    by = "Score_bin"
+  ) %>%
+  filter(n > 0)
+
+# --- Comptage des occurrences pour les espèces ---
+counts_especes_facet <- df_especes_facet %>%
+  group_by(Espece, Score_bin) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  filter(n > 0)
+
+# --- Graphique final ---
+ggplot() +
+  # TOT en fond gris
+  geom_col(data = df_tot_replique, aes(x = Score_bin, y = n), fill = "grey80") +
+  
+  # Espèces en vert
+  geom_col(data = counts_especes_facet, aes(x = Score_bin, y = n), fill = "forestgreen") +
+  scale_y_log10()+
+  
+  # Facettes par espèce
+  facet_wrap(~ Espece, scales = "free_y") +
+  labs(
+    title = "Distribution des scores de recouvrement",
+    x = "Score de recouvrement (binné)",
+    y = "Nombre d'ID_LAG"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
 
