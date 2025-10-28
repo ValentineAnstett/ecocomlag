@@ -8,7 +8,7 @@ Macro_Ptscontacts = Macro_Ptscontacts %>%
 Macro_Ptscontacts = Macro_Ptscontacts[, colSums(Macro_Ptscontacts != 0, na.rm = TRUE) > 0]
 
 
-Macro_Ptscontacts_sanstot = Macro_Ptscontacts [, -15]
+Macro_Ptscontacts_sanstot = Macro_Ptscontacts [, -16]
 
 
 #Import dataset Envirr 
@@ -21,16 +21,16 @@ Data_envir = Data_envir %>%
 
 #Selection des variables 
 Data_envir = Data_envir %>%
-  dplyr::select(-CAILLOUX, -eau, -turbidite, -conductivite, -SABLES, -AZOTE_TOT)
+  dplyr::select(-CAILLOUX, -eau, -turbidite, -conductivity, -sand, -nitrogen)
 
 
 ### RDA ----
 
 #Preparer les données 
-df_merged = merge(Macro_Ptscontacts_sanstot, Data_envir, by = c("Annee", "Site", "ID_LAG"))
+df_merged = merge(Macro_Ptscontacts_sanstot, Data_envir, by = c("Year", "Site", "ID_LAG"))
 
-Y = df_merged [, 4:14]  #Especes == variable a exploquer 
-X = df_merged [, 15:22] #Var envirr == variables explicatives 
+Y = df_merged [, 4:15]  #Especes == variable a exploquer 
+X = df_merged [, 16:23] #Var envirr == variables explicatives 
 
 #Nettoyer les donnes 
 complete_rows = complete.cases(Y, X)
@@ -61,24 +61,58 @@ df_species$Species = rownames(df_species)
 df_env$Var = rownames(df_env)
 
 #### Graph ggplot ----
-
 ggplot() +
-  geom_point(data = df_sites, aes(x = RDA1, y = RDA2), colour = "grey50") +
+  # Sites
+  geom_point(data = df_sites, aes(x = RDA1, y = RDA2), colour = "grey50", size = 4) +
+  
+  # Flèches espèces
   geom_segment(data = df_species, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
-               arrow = arrow(length = unit(0.2, "cm")), colour = "darkgreen") +
-  geom_text_repel(data = df_species, aes(x = RDA1, y = RDA2, label = Species),
-                  colour = "darkgreen", size = 5, max.overlaps = 30) +  
+               arrow = arrow(length = unit(0.3, "cm")), colour = "darkgreen", size = 0.8) +
+  geom_text_repel(
+    data = df_species, aes(x = RDA1, y = RDA2, label = Species),
+    colour = "darkgreen",
+    size = 7,
+    box.padding = 0.7,
+    point.padding = 0.7,
+    segment.size = 0.6,
+    segment.color = "darkgreen",
+    min.segment.length = 0,
+    max.overlaps = Inf,
+    force = 2
+  ) +
+  
+  # Flèches environnement
   geom_segment(data = df_env, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
-               arrow = arrow(length = unit(0.2, "cm")), colour = "darkblue") +
-  geom_text_repel(data = df_env, aes(x = RDA1, y = RDA2, label = Var),
-                  colour = "darkblue", size = 5, max.overlaps = 30) + 
-  geom_hline(yintercept = 0, color = "black") +           
-  geom_vline(xintercept = 0, color = "black") +           
-  xlab("RDA1") +
-  ylab("RDA2") +
-  ggtitle("Biplot RDA ") +
-  theme_minimal(base_size = 16) +
-  theme(panel.border = element_rect(color = "black", fill = NA, linewidth = 1))
+               arrow = arrow(length = unit(0.3, "cm")), colour = "darkblue", size = 0.8) +
+  geom_text_repel(
+    data = df_env, aes(x = RDA1, y = RDA2, label = Var),
+    colour = "darkblue",
+    size = 7,
+    box.padding = 0.7,
+    point.padding = 0.7,
+    segment.size = 0.6,
+    segment.color = "darkblue",
+    min.segment.length = 0,
+    max.overlaps = Inf,
+    force = 2
+  ) +
+  
+  # Axes
+  geom_hline(yintercept = 0, color = "black", size = 0.6) +
+  geom_vline(xintercept = 0, color = "black", size = 0.6) +
+  
+  # Labels axes avec inertie
+  xlab(paste0("RDA1 (", expl_var1, "%)")) +
+  ylab(paste0("RDA2 (", expl_var2, "%)")) +
+  
+  # Theme publication-ready
+  theme_minimal(base_size = 18) +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    axis.title = element_text(size = 25),
+    axis.text = element_text(size = 25),
+    plot.title = element_text(size = 25, face = "bold")
+  )
 
 #### Influence des variables environnementales ----
 species_scores = scores(rda_result, display = "species", scaling = 2)
@@ -106,23 +140,27 @@ apply(cor_matrix, 1, function(x) {
 
 
 cor_matrix_clean = cor_matrix[!apply(cor_matrix, 1, function(x) any(is.na(x))), ]
-pheatmap(cor_matrix_clean,
-         cluster_rows = TRUE,
-         cluster_cols = TRUE,
-         display_numbers = TRUE,
-         main = "Corrélation espèces vs variables environnementales")
+pheatmap(
+  cor_matrix_clean,
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  display_numbers = TRUE,
+  fontsize = 14,        
+  fontsize_number = 12, 
+  number_color = "black"
+)
 
 
 ###LM sur TBI global ---- 
 
 #Refaire TBI ici rapidement 
-Macro_T1 = Macro_Ptscontacts %>% filter(Annee == 2020) %>% arrange(ID_LAG)
-Macro_T2 = Macro_Ptscontacts %>% filter(Annee == 2025) %>% arrange(ID_LAG)
+Macro_T1 = Macro_Ptscontacts %>% filter(Year == 2020) %>% arrange(ID_LAG)
+Macro_T2 = Macro_Ptscontacts %>% filter(Year == 2025) %>% arrange(ID_LAG)
 ID_communs = intersect(Macro_T1$ID_LAG, Macro_T2$ID_LAG)
 Macro_T1 = Macro_T1 %>% filter(ID_LAG %in% ID_communs) %>% arrange(ID_LAG)
 Macro_T2 = Macro_T2 %>% filter(ID_LAG %in% ID_communs) %>% arrange(ID_LAG)
-especes_T1 = Macro_T1 %>% dplyr::select(-Annee, -Site, -ID_LAG)
-especes_T2 = Macro_T2 %>% dplyr::select(-Annee, -Site, -ID_LAG)
+especes_T1 = Macro_T1 %>% dplyr::select(-Year, -Site, -ID_LAG)
+especes_T2 = Macro_T2 %>% dplyr::select(-Year, -Site, -ID_LAG)
 rownames(especes_T1) = Macro_T1$ID_LAG
 rownames(especes_T2) = Macro_T2$ID_LAG
 non_vides = which(rowSums(especes_T1) != 0 & rowSums(especes_T2) != 0)
@@ -147,15 +185,15 @@ tbi_result = data.frame(
 )
 
 #Preparer les donnees envir
-envir_2020 = Data_envir %>% filter(Annee == 2020) %>% arrange(ID_LAG)
-envir_2025 = Data_envir %>% filter(Annee == 2025) %>% arrange(ID_LAG)
+envir_2020 = Data_envir %>% filter(Year == 2020) %>% arrange(ID_LAG)
+envir_2025 = Data_envir %>% filter(Year == 2025) %>% arrange(ID_LAG)
 envir_2020 = Data_envir %>%
-  filter(Annee == 2020) %>%
+  filter(Year == 2020) %>%
   drop_na() %>%           # Supprime lignes avec NA
   arrange(ID_LAG)
 
 envir_2025 = Data_envir %>%
-  filter(Annee == 2025) %>%
+  filter(Year == 2025) %>%
   drop_na() %>%           # Supprime lignes avec NA
   arrange(ID_LAG)
 
@@ -163,8 +201,8 @@ ID_envir_communs = intersect(envir_2020$ID_LAG, envir_2025$ID_LAG)
 envir_2020 = envir_2020 %>% filter(ID_LAG %in% ID_envir_communs) %>% arrange(ID_LAG)
 envir_2025 = envir_2025 %>% filter(ID_LAG %in% ID_envir_communs) %>% arrange(ID_LAG)
 stopifnot(identical(envir_2020$ID_LAG, envir_2025$ID_LAG))
-env_vars_2020 = envir_2020 %>% dplyr::select(-Annee, -Site, -ID_LAG)
-env_vars_2025 = envir_2025 %>% dplyr::select(-Annee, -Site, -ID_LAG)
+env_vars_2020 = envir_2020 %>% dplyr::select(-Year, -Site, -ID_LAG)
+env_vars_2025 = envir_2025 %>% dplyr::select(-Year, -Site, -ID_LAG)
 
 # Calcul du delta (2025 - 2020)
 delta_envir = env_vars_2025 - env_vars_2020
@@ -190,7 +228,7 @@ plot(modele_simplifie)
 #### Graphs ----
 
 #1 : uns par uns 
-variables = c("P2O5_TOT", "LIMONS", "temperature", "hauteur_eau", "salinite")
+variables = c("P2O5_TOT", "silt")
 
 for (var in variables) {
   p = ggplot(modele_TBI, aes_string(x = var, y = "change")) +
@@ -205,7 +243,7 @@ for (var in variables) {
 
 #2 : les 4 significatifs ensembles 
 
-vars_subset = c("LIMONS", "salinite", "temperature")
+vars_subset = c("silt", "P2O5_TOT")
 plots = lapply(vars_subset, function(var) {
   ggplot(modele_TBI, aes_string(x = var, y = "change")) +
     geom_point() +
@@ -215,7 +253,7 @@ plots = lapply(vars_subset, function(var) {
     theme_minimal()
 })
 # Afficher les 4 graphiques en 2x2
-(plots[[1]] | plots[[2]]) / (plots[[3]])
+(plots[[1]] / plots[[2]])
 
 
 ### LM sur TBI pertes ----
