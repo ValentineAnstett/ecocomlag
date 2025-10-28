@@ -12,37 +12,37 @@ Macro_Ptscontacts_sanstot = Macro_Ptscontacts [, -15]
 
 
 ###  Boxplots 2020 vs 2025 ----
-couleurs_annee = c("2020" = "#F8766D",  # rouge clair
+couleurs_Year = c("2020" = "#F8766D",  # rouge clair
                     "2025" = "#00BFC4") 
 #### Boxplot sur le total de chaque lagune ----
-ggplot(Macro_Ptscontacts, aes(x = factor(Annee), y = TOT, fill = factor(Annee))) +
+ggplot(Macro_Ptscontacts, aes(x = factor(Year), y = TOT, fill = factor(Year))) +
   geom_boxplot(alpha = 0.5, color = "black") +   # boxplot avec contour noir
   geom_line(aes(group = ID_LAG), color = "grey50", alpha = 0.7, show.legend = FALSE) +
   geom_point(color = "black", size = 2, show.legend = FALSE) +
-  scale_fill_manual(values = couleurs_annee) +  # appliquer les couleurs
-  labs(x = "Année", y =  "Valeurs TOT", fill = "Année") +
+  scale_fill_manual(values = couleurs_Year) +  # appliquer les couleurs
+  labs(x = "Year", y =  "Total", fill = "Year") +
   theme_minimal() +
   theme(legend.position = "none")
 
 #Boxplot sur la moyenne des indices par lagunes 
 Macro_Ptscontacts_long = Macro_Ptscontacts %>%
-  filter(Annee %in% c(2020, 2025)) %>%
+  filter(Year %in% c(2020, 2025)) %>%
   pivot_longer(
-    cols = -c(Annee, Site, ID_LAG),
+    cols = -c(Year, Site, ID_LAG),
     names_to = "Espece",
     values_to = "indice"
   )
 
 df_agg = Macro_Ptscontacts_long %>%
-  group_by(Annee, ID_LAG) %>%
+  group_by(Year, ID_LAG) %>%
   summarise(moyenne_indice = mean(indice, na.rm = TRUE)) %>%
   ungroup()
 
-ggplot(df_agg, aes(x = factor(Annee), y = moyenne_indice, fill = factor(Annee))) +
+ggplot(df_agg, aes(x = factor(Year), y = moyenne_indice, fill = factor(Year))) +
   geom_boxplot(alpha = 0.5, color = "black") +   # boxplot avec contour noir
   geom_line(aes(group = ID_LAG), color = "grey50", alpha = 0.7, show.legend = FALSE) +
   geom_point(color = "black", size = 2, show.legend = FALSE) +
-  scale_fill_manual(values = couleurs_annee) +  # appliquer les couleurs
+  scale_fill_manual(values = couleurs_Year) +  # appliquer les couleurs
   labs(x = "Année", y = "Indice moyen de présence par lagune", fill = "Année") +
   theme_minimal() +
   theme(legend.position = "none")
@@ -51,14 +51,14 @@ ggplot(df_agg, aes(x = factor(Annee), y = moyenne_indice, fill = factor(Annee)))
 
 Macro_Ptscontacts_sanstot = Macro_Ptscontacts_sanstot %>%
   rowwise() %>%
-  mutate(n_sp = sum(c_across(-c(Annee, Site, ID_LAG)) > 0, na.rm = TRUE)) %>%
+  mutate(n_sp = sum(c_across(-c(Year, Site, ID_LAG)) > 0, na.rm = TRUE)) %>%
   ungroup()
 
 df_n_sp = Macro_Ptscontacts_sanstot %>%
-  dplyr::select(Annee,Site, ID_LAG, n_sp) %>%
-  filter(Annee %in% c(2020, 2025)) %>%
+  dplyr::select(Year,Site, ID_LAG, n_sp) %>%
+  filter(Year %in% c(2020, 2025)) %>%
   pivot_wider(
-    names_from = Annee,
+    names_from = Year,
     values_from = n_sp,
     names_prefix = "n_sp_"
   ) %>%
@@ -143,8 +143,8 @@ ggplot(df_n_sp, aes(x = n_sp_2020, y = n_sp_2025, color = Site)) +
 #Transformation des datas avec Hellinger
 data_afc = Macro_Ptscontacts_sanstot[,-15]
 data_afc_clean = data_afc %>% mutate(across(everything(), ~replace_na(.x, 0)))
-meta = data_afc_clean %>% dplyr::select(Annee, Site, ID_LAG)
-data_num = data_afc_clean %>% dplyr::select(-Annee, -Site, -ID_LAG)
+meta = data_afc_clean %>% dplyr::select(Year, Site, ID_LAG)
+data_num = data_afc_clean %>% dplyr::select(-Year, -Site, -ID_LAG)
 data_hellinger = decostand(data_num, method = "hellinger")
 
 #Faire l'ACP sur données transformées
@@ -201,13 +201,13 @@ ggplot(coord_ind %>% filter(!ID_LAG %in% c("G_07", "G_06","D_04","D_05")), aes(x
 ##Graph avec polygone par année 
 
 ggplot(coord_ind %>% filter(!ID_LAG %in% c("G_07", "G_06","D_04","D_05")), 
-       aes(x = Dim.1, y = Dim.2, color = as.factor(Annee))) +
+       aes(x = Dim.1, y = Dim.2, color = as.factor(Year))) +
   geom_point(size = 3, alpha = 0.8) +
   geom_polygon(
     data = (coord_ind %>% 
               filter(!ID_LAG %in% c("G_07", "G_06","D_04","D_05")) %>% 
-              group_by(Annee) %>% group_modify(~get_hull(.x))),
-    aes(x = Dim.1, y = Dim.2, fill = as.factor(Annee), group = Annee),
+              group_by(Year) %>% group_modify(~get_hull(.x))),
+    aes(x = Dim.1, y = Dim.2, fill = as.factor(Year), group = Year),
     alpha = 0.15, color = NA, inherit.aes = FALSE
   ) +
   geom_segment(
@@ -224,10 +224,10 @@ ggplot(coord_ind %>% filter(!ID_LAG %in% c("G_07", "G_06","D_04","D_05")),
     title = "ACP sur données transformées Hellinger\navec lagunes colorées par année et flèches espèces",
     x = "Dimension 1",
     y = "Dimension 2",
-    color = "Année", fill = "Année"
+    color = "Year", fill = "Year"
   ) +
-  scale_color_manual(values = couleurs_annee) +
-  scale_fill_manual(values = couleurs_annee) +
+  scale_color_manual(values = couleurs_Year) +
+  scale_fill_manual(values = couleurs_Year) +
   theme_minimal() +
   theme(
     panel.border = element_rect(color = "black", fill = NA),
@@ -244,9 +244,9 @@ ggplot(coord_ind %>% filter(!ID_LAG %in% c("G_07", "G_06","D_04","D_05")),
 #FacetPlot 
 # --- Données initiales : filtrage des années + passage en long format ---
 Data_facet <- Macro_Ptscontacts %>%
-  filter(Annee %in% c(2020, 2025)) %>%
+  filter(Year %in% c(2020, 2025)) %>%
   pivot_longer(
-    cols = -c(Annee, Site, ID_LAG),
+    cols = -c(Year, Site, ID_LAG),
     names_to = "Espece",
     values_to = "Score"
   )
