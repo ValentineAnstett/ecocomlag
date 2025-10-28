@@ -82,8 +82,11 @@ Hydro_germi = Hydro_germi %>%
   mutate(Site = sub("_[^_]+$", "", code))
 Hydro_germi = Hydro_germi %>%
   rename(
-    Annee = annee,
-    ID_LAG = code
+    Year = annee,
+    ID_LAG = code,
+    water_level = hauteur_eau,
+    salinity = salinite,
+    conductivity = conductivite
   )
 
 Hydro_germi = Hydro_germi[,-1]
@@ -170,6 +173,16 @@ Sol = Sol %>%
 Sol = Sol %>%
   mutate(ID_LAG = paste0(Site, "_", sub(".*_", "", ID_LAG)))
 
+Sol = Sol %>%
+  rename(
+    Year = Annee, 
+    organic_matter = MO_TOT,
+    nitrogen = AZOTE_TOT,
+    clay = ARGILE,
+    silt = LIMONS,
+    sand = SABLES
+  )
+
 # Importer dans processed 
 write.csv(Sol, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_sol/Sol.csv", row.names = FALSE)
 
@@ -183,10 +196,10 @@ setdiff(Hydro_germi$ID_LAG, Sol$ID_LAG)
 #Merge les tableaux
 
 data_envir = merge(Sol, Hydro_germi, 
-                   by = c("Annee", "Site", "ID_LAG"), 
+                   by = c("Year", "Site", "ID_LAG"), 
                    all = FALSE)
 #verif 
-any(duplicated(data_envir[, c("Annee", "Site", "ID_LAG")]))
+any(duplicated(data_envir[, c("Year", "Site", "ID_LAG")]))
 
 # Importer dans processed 
 write.csv(data_envir, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Data_envir.csv", row.names = FALSE)
@@ -329,7 +342,7 @@ Macro_Ptscontacts = Macro_Ptscontacts %>%
 #Renommer les colonnes pour coller avec les autres frame 
 Macro_Ptscontacts = Macro_Ptscontacts %>%
   rename(
-    Annee = annee,
+    Year = annee,
     ID_LAG = LAGUNE
   )
 
