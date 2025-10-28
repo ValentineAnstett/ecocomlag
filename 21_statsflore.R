@@ -6,7 +6,7 @@ Macro_Ptscontacts= read.csv("Macro_Ptscontacts.csv", header = TRUE, sep = ",", d
 Macro_Ptscontacts = Macro_Ptscontacts %>%
   filter(!(ID_LAG %in% c("PAL_VIL_07", "PAL_VIL_06","ORB_MAI_04","ORB_MAI_05"))) #Outliers
 
-couleurs_annee = c("2020" = "#F8766D",  # rouge clair
+couleurs_Year = c("2020" = "#F8766D",  # rouge clair
                    "2025" = "#00BFC4") 
 Macro_Ptscontacts_sanstot = Macro_Ptscontacts [, -19]
 
@@ -22,10 +22,10 @@ data_clean = Macro_Ptscontacts_sanstot[rownames(Macro_Ptscontacts_sanstot) %in% 
 
 dist_mat = vegdist(especes_clean, method = "bray")
 
-permanova_macro_global_result = adonis2(dist_mat ~ Annee, data = data_clean)
+permanova_macro_global_result = adonis2(dist_mat ~ Year, data = data_clean)
 print(permanova_macro_global_result)
 
-permanova_macro_details_result = adonis2(dist_mat ~ Annee + Site + ID_LAG, data = data_clean, by = "terms", permutations = 999)
+permanova_macro_details_result = adonis2(dist_mat ~ Year + Site + ID_LAG, data = data_clean, by = "terms", permutations = 999)
 print(permanova_macro_details_result)
 
 permanova_macro_site_result = adonis2(dist_mat ~ Site, data = data_clean, by = "terms", permutations = 999)
@@ -42,15 +42,15 @@ barplot(R2, main = "Contribution des facteurs (R²)", las=2)
 
 #Verifier la dispersion 
 
-disp_annee <- betadisper(dist_mat, data_clean$Annee)
-anova(disp_annee)
-plot(disp_annee) 
+disp_Year <- betadisper(dist_mat, data_clean$Year)
+anova(disp_Year)
+plot(disp_Year) 
 
 ### Wilcoxon test ---- 
 #test sur le total 
-df_wide = reshape(Macro_Ptscontacts[, c("ID_LAG", "Annee", "TOT")],
+df_wide = reshape(Macro_Ptscontacts[, c("ID_LAG", "Year", "TOT")],
                    idvar = "ID_LAG",
-                   timevar = "Annee",
+                   timevar = "Year",
                    direction = "wide")
 
 df_wide = na.omit(df_wide)
@@ -78,7 +78,7 @@ stars = sig_stars(wilcox_tot$p.value)
 
 #Graph
 
-couleurs_annee_transparentes = adjustcolor(couleurs_annee, alpha.f = 0.5)
+couleurs_Year_transparentes = adjustcolor(couleurs_Year, alpha.f = 0.5)
 pval_tot = signif(wilcox_tot$p.value, 3)
 pval_text_tot = paste0("p = ", signif(wilcox_tot$p.value, 3), " ", stars)
 
@@ -90,7 +90,7 @@ boxplot(df_wide$TOT.2020, df_wide$TOT.2025,
         names = c("2020", "2025"),
         main = "Comparaison de TOT entre 2020 et 2025",
         ylab = "Abondance TOT",
-        col = couleurs_annee_transparentes,
+        col = couleurs_Year_transparentes,
         cex.main = 1.8,
         cex.lab = 1.5,
         cex.axis = 1.3,
@@ -101,8 +101,8 @@ text(x = 1.5, y = y_max_tot * 1.1, labels = pval_text_tot, cex = 1.5)
 
 #test espèce par espèce 
 
-annees_a_comparer = c(2020, 2025)
-df_sub = subset(Macro_Ptscontacts_sanstot, Annee %in% annees_a_comparer)
+Years_a_comparer = c(2020, 2025)
+df_sub = subset(Macro_Ptscontacts_sanstot, Year %in% Years_a_comparer)
 especes_cols = names(df_sub)[4:ncol(df_sub)]
 
 resultats = data.frame(Espece = especes_cols, p_value = NA)
@@ -110,7 +110,7 @@ resultats = data.frame(Espece = especes_cols, p_value = NA)
 # Boucle sur chaque espèce
 for (i in seq_along(especes_cols)) {
   espece = especes_cols[i]
-  form = as.formula(paste(espece, "~ Annee"))
+  form = as.formula(paste(espece, "~ Year"))
   test = tryCatch({
     wilcox.test(form, data = df_sub)
   }, error = function(e) {
@@ -129,9 +129,9 @@ print(significatives)
 
 #Representation graphique 
 especes_signif = c("Ruppia.maritima", "Althenia.filiformis", 
-                    "Lamprothamnium.papulosum")
+                    "Lamprothamnium.papulosum", "Riella.helicophylla")
 
-df_plot = df_sub[, c("Annee", especes_signif)]
+df_plot = df_sub[, c("Year", especes_signif)]
 
 df_long = pivot_longer(df_plot,
                         cols = all_of(especes_signif),
@@ -151,7 +151,7 @@ annot = annot %>%
   )
 
 # 4. Plot avec annotation
-ggplot(df_long, aes(x = Espece, y = Abondance, fill = as.factor(Annee))) +
+ggplot(df_long, aes(x = Espece, y = Abondance, fill = as.factor(Year))) +
   geom_boxplot(position = position_dodge(0.8), alpha = 0.5) +
   geom_text(data = annot,
             aes(x = Espece, y = y, label = p_label),
@@ -174,8 +174,8 @@ ggplot(df_long, aes(x = Espece, y = Abondance, fill = as.factor(Annee))) +
 
 ###TBI----
 
-Macro_T1 = Macro_Ptscontacts_sanstot %>% filter(Annee == 2020) %>% arrange(ID_LAG)
-Macro_T2 = Macro_Ptscontacts_sanstot %>% filter(Annee == 2025) %>% arrange(ID_LAG)
+Macro_T1 = Macro_Ptscontacts_sanstot %>% filter(Year == 2020) %>% arrange(ID_LAG)
+Macro_T2 = Macro_Ptscontacts_sanstot %>% filter(Year == 2025) %>% arrange(ID_LAG)
 # Verifeir que LAG communes 
 ID_communs = intersect(Macro_T1$ID_LAG, Macro_T2$ID_LAG)
 
@@ -183,8 +183,8 @@ Macro_T1 = Macro_T1 %>% filter(ID_LAG %in% ID_communs) %>% arrange(ID_LAG)
 Macro_T2 = Macro_T2 %>% filter(ID_LAG %in% ID_communs) %>% arrange(ID_LAG)
 
 #Création des matrices d'especes 
-especes_T1 = Macro_T1 %>% dplyr::select(-Annee, -Site, -ID_LAG)
-especes_T2 = Macro_T2 %>% dplyr::select(-Annee, -Site, -ID_LAG)
+especes_T1 = Macro_T1 %>% dplyr::select(-Year, -Site, -ID_LAG)
+especes_T2 = Macro_T2 %>% dplyr::select(-Year, -Site, -ID_LAG)
 rownames(especes_T1) = Macro_T1$ID_LAG
 rownames(especes_T2) = Macro_T2$ID_LAG
 
@@ -233,8 +233,8 @@ plot(result$BCD.mat[, "B/(2A+B+C)"],  # pertes (losses)
 )
 
 # Utiliser tbi_result$ID_LAG pour les labels
-text(result$BCD.mat[, "B/(2A+B+C)"], result$BCD.mat[, "C/(2A+B+C)"],
-     labels = tbi_result$ID_LAG, pos = 3, cex = 0.7)
+#text(result$BCD.mat[, "B/(2A+B+C)"], result$BCD.mat[, "C/(2A+B+C)"],
+     #labels = tbi_result$ID_LAG, pos = 3, cex = 0.7)
 
 abline(a = 0, b = 1, col = "lightgreen", lty = 1, lwd = 2)
 
@@ -252,6 +252,38 @@ abline(a = delta, b = 1, col = "red", lty = 3, lwd = 2)
 write.csv(tbi_result[, c("ID_LAG", "change")], 
           file = "tbi_change_summary.csv", 
           row.names = FALSE)
+#avec test de signi
+# Calcul des gains, pertes et delta
+losses <- result$BCD.mat[, "B/(2A+B+C)"]
+gains  <- result$BCD.mat[, "C/(2A+B+C)"]
+diff_CB <- gains - losses
+delta <- mean(diff_CB, na.rm = TRUE)
+
+# Test statistique : Wilcoxon non-paramétrique
+test_result <- wilcox.test(diff_CB, mu = 0)
+
+# Création du scatter plot
+plot(losses, gains,
+     xlab = "Losses (B / (2A+B+C))",
+     ylab = "Gains (C / (2A+B+C))",
+     main = "Changes in dissimilarity (TBI)",
+     pch = 19, col = "grey",
+     xlim = c(0,1),
+     ylim = c(0,1))
+
+# Ligne d'égalité (y = x)
+abline(a = 0, b = 1, col = "lightgreen", lty = 1, lwd = 2)
+
+# Ligne de déviance moyenne (delta)
+abline(a = delta, b = 1, col = "red", lty = 3, lwd = 2)
+
+# Annotation du test statistique
+legend("topleft", 
+       legend = paste0("delta = ", round(delta, 3), 
+                       "\nWilcox p = ", signif(test_result$p.value, 3)),
+       bty = "n", cex = 0.9)
+
+
 
 #4
 df_long = tbi_result %>%
@@ -415,7 +447,6 @@ ggplot(tbi_result, aes(x = Site.x, y = change)) +
   geom_jitter(width = 0.2, alpha = 0.6, color = "darkblue") +
   geom_hline(yintercept = 0, color = "grey80", size = 0.5) +
   labs(
-    title = "Variation of Change (TBI) by Site",
     x = "Site",
     y = "TBI - Total Dissimilarity"
   ) +
