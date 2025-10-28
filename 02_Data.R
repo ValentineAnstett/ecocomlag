@@ -14,22 +14,22 @@ Hydro = Hydro %>%
 
 Hydro_mois = Hydro %>%
   mutate(
-    annee = year(date_releve),
+    Year = year(date_releve),
     mois = month(date_releve)
   ) %>%
   filter(
-    annee %in% c(2019,2020, 2025),
+    Year %in% c(2019,2020, 2025),
     mois %in% c(4, 5, 6)  # avril, mai, juin
   )
 # Nombre de sites uniques par année et mois
 site_counts = Hydro_mois %>%
-  group_by(annee, mois) %>%
+  group_by(Year, mois) %>%
   summarise(nb_sites = n_distinct(site), .groups = "drop")
 print(site_counts)
 
 # Trouver le mois qui a le plus de sites pour chaque année
 mois_max_sites = site_counts %>%
-  group_by(annee) %>%
+  group_by(Year) %>%
   filter(nb_sites == max(nb_sites)) %>%
   ungroup()
 
@@ -41,15 +41,15 @@ print(mois_max_sites)
 
 Hydro_germi <- Hydro %>%
   mutate(
-    annee = year(date_releve),
+    Year = year(date_releve),
     mois = month(date_releve)
   ) %>%
   filter(
     # Garder avril 2020 et avril 2025 pour tous les sites
-    (annee == 2020 & mois == 4) |
-      (annee == 2025 & mois == 4 & !site %in% c("Orpellieres", "La Grande Motte")) |
+    (Year == 2020 & mois == 4) |
+      (Year == 2025 & mois == 4 & !site %in% c("Orpellieres", "La Grande Motte")) |
       # Mars 2025 uniquement pour ces sites
-      (annee == 2025 & mois == 3 & site %in% c("Orpellieres", "La Grande Motte","Capelude","Chaumadou","La Palme"))
+      (Year == 2025 & mois == 3 & site %in% c("Orpellieres", "La Grande Motte","Capelude","Chaumadou","La Palme"))
   )
 
 Hydro_germi = Hydro_germi[,-c(3,4,5,6,13,15)]
@@ -82,7 +82,7 @@ Hydro_germi = Hydro_germi %>%
   mutate(Site = sub("_[^_]+$", "", code))
 Hydro_germi = Hydro_germi %>%
   rename(
-    Year = annee,
+    Year = Year,
     ID_LAG = code,
     water_level = hauteur_eau,
     salinity = salinite,
@@ -152,7 +152,7 @@ Sol$SABLES = Sol$SABLES_FIN + Sol$SABLES_GROSSIERS
 Sol = Sol[, -c(10:13)]
 
 #Mettre 2020 à la place de 2021 pour fit les autres dataframe 
-Sol$Annee[Sol$Annee == 2021] = 2020
+Sol$Year[Sol$Year == 2021] = 2020
 
 #Mettre des lettres pour les sites 
 Sol = Sol %>%
@@ -175,7 +175,7 @@ Sol = Sol %>%
 
 Sol = Sol %>%
   rename(
-    Year = Annee, 
+    Year = Year, 
     organic_matter = MO_TOT,
     nitrogen = AZOTE_TOT,
     clay = ARGILE,
@@ -220,7 +220,7 @@ Macro2020_clean = Macro2020_clean %>%
   dplyr::select(-ends_with("_REL_COV"))
 colnames(Macro2020_clean) = sub("_ABS_COV$", "", colnames(Macro2020_clean))
 Macro2020_clean = Macro2020_clean %>%
-  mutate(annee = 2020)
+  mutate(Year = 2020)
 Macro2020_clean = Macro2020_clean[, c(16, 1:15)]
 Macro2020_clean = Macro2020_clean %>%
   mutate(across(-c(1, 2), ~{
@@ -229,10 +229,10 @@ Macro2020_clean = Macro2020_clean %>%
   }))
 
 df_long_2020 = Macro2020_clean %>%
-  pivot_longer(-c(annee,LAGUNE), names_to = "Espece", values_to = "Recouvrement")
+  pivot_longer(-c(Year,LAGUNE), names_to = "Espece", values_to = "Recouvrement")
 
 df_result_2020 = df_long_2020 %>%
-  group_by(annee,LAGUNE, Espece) %>%
+  group_by(Year,LAGUNE, Espece) %>%
   summarise(
     Frequence = sum(Recouvrement > 0),
     Recouvrement_Total = sum(Recouvrement),
@@ -264,10 +264,10 @@ Macro2025_clean = Macro2025 [,-c(3,4)]
 colnames(Macro2025_clean) = sub("_ABS_COV$", "", colnames(Macro2025_clean))
 
 df_long_2025 = Macro2025_clean %>%
-  pivot_longer(-c(annee,LAGUNE), names_to = "Espece", values_to = "Recouvrement")
+  pivot_longer(-c(Year,LAGUNE), names_to = "Espece", values_to = "Recouvrement")
 
 df_result_2025 = df_long_2025 %>%
-  group_by(annee,LAGUNE, Espece) %>%
+  group_by(Year,LAGUNE, Espece) %>%
   summarise(
     Frequence = sum(Recouvrement > 0),
     Recouvrement_Total = sum(Recouvrement),
@@ -283,13 +283,13 @@ Macro_Ptscontacts_2025 = df_result_2025 %>%
 
 #Remettre dans le bon sens 
 Macro_Ptscontacts_2025 = Macro_Ptscontacts_2025 %>%
-  dplyr::select(annee, LAGUNE, Espece, indice_sp) %>%  
+  dplyr::select(Year, LAGUNE, Espece, indice_sp) %>%  
   pivot_wider(
     names_from = Espece,
     values_from = indice_sp
   )
 Macro_Ptscontacts_2020 = Macro_Ptscontacts_2020 %>%
-  dplyr::select(annee, LAGUNE, Espece, indice_sp) %>%  
+  dplyr::select(Year, LAGUNE, Espece, indice_sp) %>%  
   pivot_wider(
     names_from = Espece,
     values_from = indice_sp
@@ -342,7 +342,7 @@ Macro_Ptscontacts = Macro_Ptscontacts %>%
 #Renommer les colonnes pour coller avec les autres frame 
 Macro_Ptscontacts = Macro_Ptscontacts %>%
   rename(
-    Year = annee,
+    Year = Year,
     ID_LAG = LAGUNE
   )
 
@@ -371,36 +371,80 @@ write.csv(Macro_Ptscontacts, file = "/home/anstett/Documents/LTM-Flora/Analyses_
 
 
 
+####Corrélation des variables ----
+# --- Données
+setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/")
+data_envir = read.csv("Data_envir.csv", header = TRUE, sep = ",", dec = ",")
 
-#Data sélection des variables ----
+data_envir = data_envir %>%
+  mutate(across(-c(Site, ID_LAG), ~ as.numeric(as.character(.))))
 
-#Regarder les sites qui ont des cortèges très différents 
-data_envir 
-
-vars_env = data_envir%>%
+vars_env = data_envir %>%
   dplyr::select(where(is.numeric)) %>%
-  dplyr::select(-Annee)
-vars_env_filtered <- vars_env[, sapply(vars_env, function(x) sd(x, na.rm = TRUE) > 0)]
-vars_env_filtered
+  dplyr::select(-any_of("Year")) %>%
+  dplyr::select(where(~ sd(., na.rm = TRUE) > 0))
 
-cor_matrix <- cor(vars_env, use = "complete.obs")
-corrplot(cor_matrix, method = "color", type = "upper", 
-         tl.cex = 0.8, tl.col = "black", addCoef.col = "black")
+# --- Calcul du VIF
+vif_result = vifstep(vars_env, th = 10)
+vars_env_vif = exclude(vars_env, vif_result)
+vif_table = vif_result@results
+vif_values = vif_table$VIF
+names(vif_values) = vif_table$Variables
+
+# --- Matrice de corrélation
+cor_matrix = cor(vars_env_vif, use = "pairwise.complete.obs")
+
+# --- Ordre cohérent entre VIF et variables du corrplot
+vif_values = vif_values[colnames(cor_matrix)]
+
+#Corrplot
+par(mar = c(1, 1, 6, 1))  # marge inférieure augmentée pour tout placer au-dessus
+corrplot(cor_matrix, method = "color", type = "lower",
+         addCoef.col = "black", tl.col = "black",
+         tl.cex = 0.8, number.cex = 0.7,
+         col = colorRampPalette(c("#4575B4", "white", "#D73027"))(200),
+         diag = FALSE)
+
+#Ajout VIF
+n <- ncol(cor_matrix)
+x_positions <- seq(1, n)
+par(xpd = TRUE)
+y_base = n + 0.2 
+text(x = mean(x_positions), y = y_base + 0.9, 
+     labels = "VIF (Variance Inflation Factor)", cex = 1, font = 2)
+vif_min = floor(min(vif_values))
+vif_max = ceiling(max(vif_values))
+vif_breaks = pretty(c(vif_min, vif_max), n = 5)
+
+segments(x0 = 1, x1 = n, y0 = y_base + 0.65, col = "gray40", lwd = 1)
+for (i in seq_along(vif_breaks)) {
+  xpos <- 1 + (i - 1) * (n - 1) / (length(vif_breaks) - 1)
+  segments(x0 = xpos, y0 = y_base + 0.65, y1 = y_base + 0.68, col = "gray40", lwd = 1)
+  text(xpos, y_base + 0.78, labels = vif_breaks[i], cex = 0.7)
+}
+text(x = x_positions, y = rep(y_base + 0.4, n),
+     labels = round(vif_values, 2),
+     cex = 0.8, font = 2)
 
 
-df_env_long <- data_envir %>%
-  pivot_longer(cols = -c(Annee, Site, ID_LAG), names_to = "variable", values_to = "valeur")
+#autres graphs 
+# Format long pour ggplot
+df_env_long = data_envir %>%
+  pivot_longer(cols = -c(Site, ID_LAG), names_to = "variable", values_to = "valeur")
 
+# Histogrammes globaux
 ggplot(df_env_long, aes(x = valeur)) +
   geom_histogram(bins = 30, fill = "#69b3a2", color = "white") +
   facet_wrap(~variable, scales = "free") +
   theme_minimal() +
-  labs(title = "Distribution (global) des variables environnementales")
+  labs(title = "Distribution (globale) des variables environnementales")
 
+# Boxplots par site
 ggplot(df_env_long, aes(x = Site, y = valeur, fill = Site)) +
   geom_boxplot(outlier.color = "red", alpha = 0.7) +
   facet_wrap(~variable, scales = "free_y") +
   theme_minimal() +
   labs(title = "Distribution des variables environnementales par site") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  guides(fill = "none")  # Enlève la légende si inutile
+  guides(fill = "none")
+
