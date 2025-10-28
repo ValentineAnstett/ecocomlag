@@ -229,7 +229,7 @@ summary(modele_simplifie_pertes)
 par(mfrow = c(2, 2))  # 4 graphiques en 1
 plot(modele_simplifie_pertes)
 
-#Graph 
+####Graph ----
 vars_subset_pertes = c("LIMONS", "P2O5_TOT")
 plots_pertes = lapply(vars_subset_pertes, function(var) {
   ggplot(df_model, aes_string(x = var, y = "pertes")) +
@@ -242,24 +242,6 @@ plots_pertes = lapply(vars_subset_pertes, function(var) {
 # Afficher les 4 graphiques en 2x2
 (plots_pertes[[1]] / plots_pertes[[2]])
 
-### LM sur gains du TBI ----
 
-df_gains_lm <- df_model %>%
-  dplyr::select(-ID_LAG, -TBI, -p_value, -pertes, -change) %>%
-  na.omit()
 
-modele_gains <- lm(gains ~ ., data = df_gains_lm)
-summary(modele_gains)
-
-# Simplification du modèle
-modele_simplifie_gains <- stepAIC(modele_gains, direction = "both", trace = FALSE)
-summary(modele_simplifie_gains)
-par(mfrow = c(2, 2))
-plot(modele_simplifie_gains)
-
-ggplot(df_gains_lm, aes(x = C.N, y = gains)) +
-  geom_point() +
-  geom_smooth(method = "lm", se = TRUE, color = "blue") +
-  labs(title = "Lien entre le ratio C/N et les gains d'espèces (TBI)",
-       x = "C/N", y = "Gains (TBI)") +
-  theme_minimal()
+## GLM ----
