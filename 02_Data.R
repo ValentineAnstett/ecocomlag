@@ -72,7 +72,7 @@ Hydro_germi = Hydro_germi %>%
   filter(!code %in% lag_a_exclure)
 #Renommer PCA_CHA 
 Hydro_germi = Hydro_germi %>%
-  mutate(code = recode(code,
+  mutate(code = dplyr::recode(code,
                          "PCA_CHA_01" = "PCA_CAP_06",
                          "PCA_CHA_03" = "PCA_CAP_08",
                          "PCA_CHA_05" = "PCA_CAP_10"))
@@ -96,7 +96,7 @@ Hydro_germi = Hydro_germi[,c(2,9,1,3:8)]
 
 #Mettre des lettres pour les sites 
 Hydro_germi = Hydro_germi %>%
-  mutate(Site = recode(Site,
+  mutate(Site = dplyr::recode(Site,
                        "LAP_SAL" = "A",
                        "SIG_GSA" = "B",
                        "ORB_ORP" = "C",
@@ -127,7 +127,7 @@ Sol = read.csv("Sol_21_25.csv", header = TRUE, sep = ",", dec=",")
 
 #Renommer PCA_CHA 
 Sol = Sol %>%
-  mutate(ID_LAG = recode(ID_LAG,
+  mutate(ID_LAG = dplyr::recode(ID_LAG,
                          "PCA_CHA_01" = "PCA_CAP_06",
                          "PCA_CHA_03" = "PCA_CAP_08",
                          "PCA_CHA_05" = "PCA_CAP_10"))
@@ -152,11 +152,11 @@ Sol$SABLES = Sol$SABLES_FIN + Sol$SABLES_GROSSIERS
 Sol = Sol[, -c(10:13)]
 
 #Mettre 2020 à la place de 2021 pour fit les autres dataframe 
-Sol$Year[Sol$Year == 2021] = 2020
+Sol$Annee[Sol$Annee == 2021] = 2020
 
 #Mettre des lettres pour les sites 
 Sol = Sol %>%
-  mutate(Site = recode(Site,
+  mutate(Site = dplyr::recode(Site,
                        "LAP_SAL" = "A",
                        "SIG_GSA" = "B",
                        "ORB_ORP" = "C",
@@ -175,16 +175,44 @@ Sol = Sol %>%
 
 Sol = Sol %>%
   rename(
-    Year = Year, 
+    Year = Annee, 
     organic_matter = MO_TOT,
     nitrogen = AZOTE_TOT,
     clay = ARGILE,
     silt = LIMONS,
-    sand = SABLES
+    sand = SABLES,
+    P2O5 = P2O5_TOT
   )
 
+#######Appliquer log pour texture 
+
+# Vérifier et corriger la somme si nécessaire
+Sol = Sol %>%
+  mutate(across(c(clay, sand, silt), ~ .x / (clay + sand + silt))) %>%
+  mutate(across(c(clay, sand, silt), ~ replace(.x, .x == 0, 1e-6)))
+
+# Calcul ILR (3 composantes → 2 coordonnées)
+ilr_mat = as.data.frame(ilr(acomp(Sol[, c("clay", "silt", "sand")])))
+colnames(ilr_mat) = c("ilr_fines_vs_sand", "ilr_clay_vs_silt")
+
+# Ajouter au dataframe original
+Sol = bind_cols(Sol, ilr_mat)
+
+####### Applique standardisation pour chimie 
+
+## --- 2. Transformations adaptées ---
+Sol_transfo <- Sol %>%
+  mutate(
+    #C_log      = log10(C + 1),            # Carbone (g/kg)
+    N_log      = log10(nitrogen + 1),        # Azote (mg/kg)
+    P2O5_log   = log10(P2O5 + 1),   # P₂O₅ (%)
+    MO_sqrt    = sqrt(organic_matter), # Matière organique (%)
+    CN_log     = ifelse(C.N > 0, log10(C.N), NA)  # Ratio C/N (optionnel)
+  )
+
+
 # Importer dans processed 
-write.csv(Sol, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_sol/Sol.csv", row.names = FALSE)
+write.csv(Sol_transfo, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_sol/Sol.csv", row.names = FALSE)
 
 
 #################################################################
@@ -447,4 +475,8 @@ ggplot(df_env_long, aes(x = Site, y = valeur, fill = Site)) +
   labs(title = "Distribution des variables environnementales par site") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   guides(fill = "none")
+
+
+
+
 
