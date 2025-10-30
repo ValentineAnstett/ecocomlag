@@ -206,13 +206,42 @@ Sol_transfo <- Sol %>%
     #C_log      = log10(C + 1),            # Carbone (g/kg)
     N_log      = log10(nitrogen + 1),        # Azote (mg/kg)
     P2O5_log   = log10(P2O5 + 1),   # P₂O₅ (%)
-    MO_sqrt    = sqrt(organic_matter), # Matière organique (%)
+    MO_log    = log10(organic_matter + 1), # Matière organique (%)
     CN_log     = ifelse(C.N > 0, log10(C.N), NA)  # Ratio C/N (optionnel)
   )
 
 
 # Importer dans processed 
 write.csv(Sol_transfo, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_sol/Sol.csv", row.names = FALSE)
+
+## --- 3. Fonction de test de normalité (Shapiro-Wilk) ---
+# On crée une petite fonction qui renvoie la p-value du test
+test_normalite <- function(x) {
+  x <- na.omit(x)
+  if (length(x) < 3) return(NA) # Shapiro nécessite au moins 3 valeurs
+  res <- shapiro.test(x)
+  return(res$p.value)
+}
+
+## --- 4. Application du test avant et après transformation ---
+# Sélection des variables brutes et transformées
+vars_brutes <- c( "nitrogen", "P2O5", "organic_matter", "C.N")
+vars_trans  <- c("N_log", "P2O5_log", "MO_sqrt", "CN_log")
+
+# Création d’un tableau comparatif
+normalite_df <- tibble(
+  Variable = vars_brutes,
+  Avant = map_dbl(Sol[vars_brutes], test_normalite),
+  Après = map_dbl(Sol_transfo[vars_trans], test_normalite)
+) %>%
+  mutate(
+    Interprétation_Avant = ifelse(Avant > 0.05, "≈ Normale", "Non normale"),
+    Interprétation_Après = ifelse(Après > 0.05, "≈ Normale", "Non normale")
+  )
+
+## --- 5. Affichage du tableau de synthèse ---
+print(normalite_df)
+
 
 
 #################################################################
