@@ -8,10 +8,10 @@ library(dplyr)
 library(httr)
 library(reticulate)
 
-
 ####TELECHARGEMENT DES IMAGES ####
 
 # 0️⃣ Configurer reticulate pour Python
+py_install("planetary-computer", envpath = "/home/anstett/.cache/R/reticulate/uv/cache/archive-v0/s4dXHS2TJT_l1_C8b9bGO", pip = TRUE)
 # pip install planetary-computer
 planetarycomputer <- import("planetary_computer")
 
@@ -97,98 +97,34 @@ for(item in items$features){
   }
 }
 
-
-
-
-
-
-
-
-
-
-
-####TRAITEMENT DES IMAGES####
-# ------------------------------
-# 8️⃣ Définir CRS UTM depuis une bande lisible
-# ------------------------------
-sample_file <- list.files("sentinel2_downloads", pattern="_B02.tif$", full.names=TRUE)[1]
-B2_ref <- rast(sample_file)
-zones_utm <- st_transform(zones, crs(B2_ref))
-zones_v <- vect(zones_utm)
-
-# ------------------------------
-# 9️⃣ Traitement NDVI / NDWI
-# ------------------------------
-results <- list()
-stats_table <- data.frame()
-
-for(i in seq_len(nrow(zones_v))){
-  
-  zone <- zones_v[i]
-  zone_name <- zones$Nom[i] %||% paste0("Zone_", i)
-  
-  for(item in items$features){
-    
-    date_img <- item$properties$`datetime`
-    
-    # chemins TIFF
-    band_files <- file.path("sentinel2_downloads", paste0(item$id, "_", bands, ".tif"))
-    names(band_files) <- bands
-    
-    if(any(!file.exists(band_files))) next
-    if(any(!sapply(band_files, check_tiff_ok))) next
-    
-    # charger
-    B2 <- rast(band_files["B02"])
-    B3 <- rast(band_files["B03"])
-    B4 <- rast(band_files["B04"])
-    B8 <- rast(band_files["B08"])
-    
-    img <- c(B2,B3,B4,B8)
-    
-    if(!relate(ext(img), ext(zone), "T********")) next
-    
-    img_clip <- tryCatch(crop(img, zone), error=function(e) NULL)
-    if(is.null(img_clip)) next
-    
-    img_mask <- tryCatch(mask(img_clip, zone), error=function(e) NULL)
-    if(is.null(img_mask)) next
-    
-    ndvi <- (img_mask[[4]] - img_mask[[3]]) / (img_mask[[4]] + img_mask[[3]])
-    ndwi <- (img_mask[[2]] - img_mask[[4]]) / (img_mask[[2]] + img_mask[[4]])
-    
-    cloud_ratio <- sum(is.na(values(ndvi))) / ncell(ndvi)
-    if(cloud_ratio > 0.1) next
-    
-    key <- paste0("zone", i, "_", item$id)
-    results[[key]] <- list(ndvi=ndvi, ndwi=ndwi)
-    
-    # ------------------------------
-    # 🔟 Extraction statistiques
-    # ------------------------------
-    ndvi_vals <- values(ndvi)
-    ndwi_vals <- values(ndwi)
-    
-    stats_table <- rbind(stats_table,
-                         data.frame(
-                           zone_id = i,
-                           zone_name = zone_name,
-                           date = as.Date(date_img),
-                           ndvi_mean = mean(ndvi_vals, na.rm=TRUE),
-                           ndvi_median = median(ndvi_vals, na.rm=TRUE),
-                           ndvi_min = min(ndvi_vals, na.rm=TRUE),
-                           ndvi_max = max(ndvi_vals, na.rm=TRUE),
-                           ndwi_mean = mean(ndwi_vals, na.rm=TRUE),
-                           ndwi_median = median(ndwi_vals, na.rm=TRUE),
-                           ndwi_min = min(ndwi_vals, na.rm=TRUE),
-                           ndwi_max = max(ndwi_vals, na.rm=TRUE),
-                           cloud_ratio = cloud_ratio
-                         )
-    )
-    
-    message("📌 Stats ajoutées pour ", zone_name, " — ", date_img)
+#Relancer pour B12 ####
+download_band <- function(item_id, band, url){
+  destfile <- file.path("sentinel2_downloads", paste0(item_id, "_", band, ".tif"))
+  if(file.exists(destfile)){
+    message("✅ Fichier déjà présent : ", destfile)
+    return(TRUE)
   }
+  
+  # Téléchargement avec tryCatch
+  tryCatch({
+    httr::GET(url, httr::write_disk(destfile, overwrite = TRUE), httr::progress())
+    message("✅ Téléchargé : ", destfile)
+    TRUE
+  }, error = function(e){
+    message("❌ Erreur téléchargement ", destfile, " : ", e$message)
+    FALSE
+  })
 }
 
-write.csv(stats_table, "NDVI_NDWI_stats_by_zone.csv", row.names = FALSE)
-
+index = 0;
+total_items <- length(items$features)
+for(item in items$features){
+  if(!is.null(item$assets[["B12"]])){
+    url <- planetarycomputer$sign(item$assets[["B12"]]$href)
+    index = index + 1
+    message("Downloading item ", index, "/", total_items)
+    download_band(item$id, "B12", url)
+  } else {
+    warning("La bande B12 n'existe pas pour l'item ", item$id)
+  }
+}
