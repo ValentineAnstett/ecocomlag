@@ -1,3 +1,6 @@
+
+install.packages(c("sf", "terra", "dplyr", "lubridate", "tibble"))
+
 library(sf)
 library(terra)
 library(dplyr)
