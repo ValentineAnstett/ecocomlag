@@ -255,12 +255,26 @@ setdiff(Hydro_germi$ID_LAG, Sol$ID_LAG)
 data_envir = merge(Sol, Hydro_germi, 
                    by = c("Year", "Site", "ID_LAG"), 
                    all = FALSE)
+
+data_envir = merge(Sol, Hydro_germi, 
+                   by = c("Year", "Site", "ID_LAG"), 
+                   all = FALSE)
 #verif 
 any(duplicated(data_envir[, c("Year", "Site", "ID_LAG")]))
 
 # Importer dans processed 
 write.csv(data_envir, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Data_envir.csv", row.names = FALSE)
 
+
+#Ajouter Topographie 
+getwd()
+setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Global/Data/Processed_Topo")
+Topographie = read.csv("Topographie.csv", header = TRUE, sep = ",", dec=",")
+
+Data_envir_test = merge(data_envir, Topographie, 
+                   by = c("Site", "ID_LAG"), 
+                   all = FALSE)
+write.csv(Data_envir_test, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Data_envir.csv", row.names = FALSE)
 
 #################################################################
 ########### DATAFRAME Indices de présence macrophytes ##########
@@ -321,10 +335,10 @@ Macro2025_clean = Macro2025 [,-c(3,4)]
 colnames(Macro2025_clean) = sub("_ABS_COV$", "", colnames(Macro2025_clean))
 
 df_long_2025 = Macro2025_clean %>%
-  pivot_longer(-c(Year,LAGUNE), names_to = "Espece", values_to = "Recouvrement")
+  pivot_longer(-c(annee,LAGUNE), names_to = "Espece", values_to = "Recouvrement")
 
 df_result_2025 = df_long_2025 %>%
-  group_by(Year,LAGUNE, Espece) %>%
+  group_by(annee,LAGUNE, Espece) %>%
   summarise(
     Frequence = sum(Recouvrement > 0),
     Recouvrement_Total = sum(Recouvrement),
@@ -335,6 +349,10 @@ print(df_result_2025)
 Macro_Ptscontacts_2025 = df_result_2025 %>%
   mutate(indice_sp = Frequence / 20)
 
+Macro_Ptscontacts_2025 = Macro_Ptscontacts_2025 %>%
+  rename(
+    Year = annee
+  )
 
 ###  Merge les 3 frames
 
@@ -377,7 +395,7 @@ Macro_Ptscontacts = bind_rows(Macro_Ptscontacts_2020, Macro_Ptscontacts_2025)
 
 #Renommer PCA_CHA 
 Macro_Ptscontacts = Macro_Ptscontacts %>%
-  mutate(LAGUNE = recode(LAGUNE,
+  mutate(LAGUNE = dplyr::recode(LAGUNE,
                        "PCA_CHA_01" = "PCA_CAP_06",
                        "PCA_CHA_03" = "PCA_CAP_08",
                        "PCA_CHA_05" = "PCA_CAP_10"))
@@ -405,7 +423,7 @@ Macro_Ptscontacts = Macro_Ptscontacts %>%
 
 #Mettre des lettres pour les sites 
 Macro_Ptscontacts = Macro_Ptscontacts %>%
-  mutate(Site = recode(Site,
+  mutate(Site = dplyr::recode(Site,
                        "LAP_SAL" = "A",
                        "SIG_GSA" = "B",
                        "ORB_ORP" = "C",
