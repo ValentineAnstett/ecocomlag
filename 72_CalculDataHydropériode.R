@@ -1,179 +1,85 @@
+
 setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale")
-stats_table = read.csv("stats_table_wiw_ndwi.csv", header = TRUE, sep = ",", dec=".")
+# Packages ----
+library(dplyr)
+library(ggplot2)
 
-###############################################
-#### Paramètres (a faire varier si besoin) ####
-###############################################
+# Paramètres ----
+seuil_assec = 25    # % surface en eau ≤ 20% = assec
+seuil_ndwi = 0.05   # seuil NDWI pour considérer un pixel en eau
+min_consec = 3  #au moins x images conssecutives pour valider l'etat 
 
-# WIW
-SEUIL_EAU_WIW  = 0.15
-SEUIL_SEC_WIW  = 0.02
+# Shapefile ----
+#NDWI des pixels de chaque cercles au différentes dates
+pixels = read.csv("ndwi_pixels_2020.csv")
+pixels$date = as.Date(pixels$date)
 
-# NDWI
-SEUIL_EAU_NDWI = 0.00
-SEUIL_SEC_NDW=0.10
 
-# Nombre d'images consécutives requises
-N_CONFIRM = 15
-#Validation assec 
-MIN_DRY_DAYS = 15 
-
-#Préparation des données / Organisation 
-stats_table = stats_table %>%
-  mutate(date = as.Date(date)) %>%
-  arrange(ID_LAG, date)
-#Definition de l'état hydro 
-stats_table = stats_table %>%
-  mutate(
-    is_water = (wiw_ratio >= 0.15 | ndwi_mean >= 0.00),
-    is_dry   = (wiw_ratio <= 0.02 & ndwi_mean <= -0.10)
-  )
-###############################################
-#### Detection des transitions (1 cycle ?) ####
-###############################################
-
-#Boucle de détéction des transitions 
-detect_hydro_dates <- function(df) {
-  
-  df <- df %>% arrange(date)
-  
-  # --- Mise en eau ---
-  if (!any(df$is_water)) {
-    return(tibble(
-      date_mise_en_eau = as.Date(NA),
-      date_assec       = as.Date(NA)
-    ))
-  }
-  
-  date_mise_en_eau <- min(df$date[df$is_water])
-  
-  # --- Recherche de l’assec APRÈS la mise en eau ---
-  df_after <- df %>% filter(date > date_mise_en_eau)
-  
-  if (!any(df_after$is_dry)) {
-    date_assec <- NA
-  } else {
-    
-    r <- rle(df_after$is_dry)
-    ends   <- cumsum(r$lengths)
-    starts <- ends - r$lengths + 1
-    
-    # Séquences sèches suffisamment longues
-    valid <- which(r$values & r$lengths >= N_CONFIRM)
-    
-    if (length(valid) == 0) {
-      date_assec <- NA
-    } else {
-      date_assec <- df_after$date[starts[valid[1]]]
-    }
-  }
-  
-  tibble(
-    date_mise_en_eau = date_mise_en_eau,
-    date_assec       = date_assec
-  )
+#% surface en eau par date ----
+calc_pct_eau = function(ndwi_values, seuil = seuil_ndwi) {
+  sum(ndwi_values > seuil, na.rm = TRUE) / sum(!is.na(ndwi_values)) * 100
 }
 
-#Application sur les zones 
-hydro_dates <- stats_table %>%
-  group_by(ID_LAG, Site) %>%
-  group_modify(~ detect_hydro_dates(.x)) %>%
-  ungroup()
+# Calcul % eau par zone et date ----
+hydro = pixels %>%
+  group_by(CODE_LAG, date) %>%
+  summarise(pct_eau = calc_pct_eau(NDWI), .groups = "drop")
 
-#Durée de mise en eau
-hydro_dates <- hydro_dates %>%
-  mutate(
-    duree_inondation_jours = as.numeric(date_assec - date_mise_en_eau)
-  )
+# Détection des cycles par zone ----
+result_final <- data.frame()
+zones <- unique(hydro$CODE_LAG)
 
-################################################
-#### Détection des cycles hydro d'une année #### 
-################################################
-
-#Boucle de detection des transitions
-detect_hydro_cycles_disjoint <- function(df, N_CONFIRM, MIN_DRY_DAYS = 15) {
+for (z in zones) {
   
-  df <- df %>% arrange(date)
+  df_zone <- hydro %>%
+    filter(CODE_LAG == z) %>%
+    arrange(date)
   
-  r <- rle(
-    ifelse(df$is_water, "water",
-           ifelse(df$is_dry, "dry", "other"))
-  )
+  # Étape 1 : état brut
+  etat_brut <- ifelse(df_zone$pct_eau <= seuil_assec, 0, 1)
   
-  ends   <- cumsum(r$lengths)
-  starts <- ends - r$lengths + 1
+  # Étape 2 : rolling window pour valider l'état sur min_consec dates
+  library(zoo)
+  etat_valide <- zoo::rollapply(etat_brut, width = min_consec, FUN = function(x) {
+    if(all(x == 0)) return(0)   # assec confirmé
+    if(all(x == 1)) return(1)   # eau confirmée
+    return(NA)                   # pas assez de confirmation
+  }, fill = NA, align = "right")
   
-  cycles <- list()
-  cycle_id <- 1
-  i <- 1
-  n_seq <- length(r$values)
+  # Remplacer NA par l'état précédent connu pour ne pas casser les séquences
+  etat_valide <- zoo::na.locf(etat_valide, na.rm = FALSE)
   
-  while (i <= n_seq) {
-    
-    # Séquence eau validée
-    if (!is.na(r$values[i]) &&
-        r$values[i] == "water" &&
-        r$lengths[i] >= N_CONFIRM) {
-      
-      # Cherche la première séquence sèche validée après eau
-      found_dry <- FALSE
-      j <- i + 1
-      while (j <= n_seq) {
-        if (!is.na(r$values[j]) &&
-            r$values[j] == "dry" &&
-            r$lengths[j] >= N_CONFIRM) {
-          
-          # Vérifier que l'assec dure au moins MIN_DRY_DAYS
-          dry_days <- as.numeric(df$date[ends[j]] - df$date[starts[j]]) + 1
-          if (dry_days >= MIN_DRY_DAYS) {
-            cycles[[cycle_id]] <- tibble(
-              cycle_id        = cycle_id,
-              date_mise_en_eau = df$date[starts[i]],
-              date_assec       = df$date[starts[j]]
-            )
-            
-            cycle_id <- cycle_id + 1
-            i <- j + 1  # On saute toutes les séquences jusqu'à la fin de l’assec
-            found_dry <- TRUE
-            break
-          }
-        }
-        j <- j + 1
+  # run-length encoding sur l'état validé
+  r <- rle(etat_valide)
+  lengths <- r$lengths
+  values <- r$values
+  ends <- cumsum(lengths)
+  starts <- ends - lengths + 1
+  
+  # Détection transitions assec → eau
+  if(length(values) > 1){
+    for(i in 1:(length(values) - 1)){
+      # 0 → 1 avec confirmation de l'état eau sur min_consec dates
+      if(isTRUE(values[i] == 0 && values[i + 1] == 1 && lengths[i+1] >= min_consec)){
+        
+        debut_assec <- df_zone$date[starts[i]]
+        mise_en_eau <- df_zone$date[starts[i + 1]]
+        duree_assec <- as.numeric(mise_en_eau - debut_assec)
+        
+        result_final <- rbind(result_final, data.frame(
+          CODE_LAG = z,
+          debut_assec = debut_assec,
+          mise_en_eau = mise_en_eau,
+          duree_assec = duree_assec
+        ))
       }
-      
-      # Si pas de séquence sèche assez longue, fin du traitement
-      if (!found_dry) break
-      
-    } else {
-      i <- i + 1
     }
   }
-  
-  if (length(cycles) == 0) {
-    return(tibble(
-      cycle_id = integer(),
-      date_mise_en_eau = as.Date(character()),
-      date_assec = as.Date(character())
-    ))
-  }
-  
-  bind_rows(cycles)
 }
 
-#Application sur les zones 
-hydro_cycles <- stats_table %>%
-  group_by(ID_LAG, Site) %>%
-  group_modify(~ detect_hydro_cycles_disjoint(.x, N_CONFIRM)) %>%
-  ungroup() %>%
-  mutate(
-    duree_inondation_jours = as.numeric(date_assec - date_mise_en_eau)
-  )
+# Vérification
+print(result_final)
 
-#Durée de mise en eau de chaque cycle
-hydro_cycles <- hydro_cycles %>%
-  mutate(
-    duree_inondation_jours = as.numeric(date_assec - date_mise_en_eau)
-  )
 
-#### Enregistrement du data_frame ####
-write.csv(hydro_cycles, "hydro_cycles_19_20.csv", row.names = FALSE)
+write.csv(result_final, "hydroperiode_2020_Vfinale.csv", row.names = FALSE)
+
