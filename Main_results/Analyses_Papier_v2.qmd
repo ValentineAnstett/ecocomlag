@@ -896,7 +896,7 @@ modele_pertes <- lm(pertes ~ ., data = df_lm_pertes)
 summary(modele_pertes)
 ```
 
-### 3) Modélisation de la niche réalisée des espèces clés
+### 3) Modélisation de la niche des espèces clés
 
 ### a) Wilcoxon par espèce (changement d'abondance 2020 vs 2025)
 
@@ -1097,7 +1097,7 @@ p_lampro   <- build_species_niche_uni("Lamprothamnium.papulosum", "#E69F00")
 p_niche_uni <- p_ruppia / p_althenia / p_lampro
 p_niche_uni
 
-ggsave("niche_realisee_univariee.svg", plot = p_niche_uni, width = 14, height = 9, units = "in")
+#ggsave("niche_realisee_univariee.svg", plot = p_niche_uni, width = 14, height = 9, units = "in")
 ```
 
 ### b-bis)  GAMM + selection avec "shrinkage" – ce qu'il y adéjà dans le papier (graph modifié) 
