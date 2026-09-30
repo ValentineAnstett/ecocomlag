@@ -334,7 +334,7 @@ cat("--- Effet Site (permutations inter-lagune) ---\n")
 adonis2(dist_bc ~ Site, data = meta_clean, permutations = perm_site, by = "margin")
 ```
 
-#### c)RDA contrainte - Facteurs écologiques de la composition 
+#### c)RDA contrainte - Facteurs écologiques de la composition
 
 L'objectif est de caractériser le lien végétation-environnement en utilisant **tous** les relevés disponibles (2020 et 2025). Comme chaque lagune est re-échantillonnée (pseudo-réplication temporelle) et que le Site structure fortement la composition, on :
 
@@ -600,7 +600,7 @@ p_richness
 ggsave("figure_richesse_finale.svg", plot = p_richness, width = 6, height = 6, units = "in")
 ```
 
-#### b) TBI 
+#### b) TBI
 
 Calcul du Temporal Beta-diversity Index (TBI) entre 2020 et 2025 pour chaque lagune échantillonnée aux deux dates : `pertes` (espèces disparues), `gains` (espèces apparues) et `change` (dissimilarité totale D).
 
@@ -898,6 +898,58 @@ summary(modele_pertes)
 
 ### 3) Modélisation de la niche réalisée des espèces clés
 
+### a) Wilcoxon par espèce (changement d'abondance 2020 vs 2025)
+
+Section conservée à l'identique : test de Wilcoxon apparié par espèce (correction de Benjamini-Hochberg pour tests multiples), complémentaire à la modélisation de niche ci-dessus.
+
+```{r species-wilcoxon}
+#| label: wilcoxon-especes
+
+resultats <- data.frame(Espece = species_cols, W_statistic = NA_real_, p_value = NA_real_)
+
+for (i in seq_along(species_cols)) {
+  sp <- species_cols[i]
+  df_wide <- macro %>%
+    filter(Year %in% c(2020, 2025)) %>%
+    dplyr::select(ID_LAG, Year, all_of(sp)) %>%
+    pivot_wider(names_from = Year, values_from = all_of(sp), names_prefix = "y") %>%
+    drop_na()
+  if (nrow(df_wide) > 1) {
+    test <- wilcox.test(df_wide$y2020, df_wide$y2025, paired = TRUE, exact = FALSE)
+    resultats$W_statistic[i] <- test$statistic
+    resultats$p_value[i] <- test$p.value
+  }
+}
+
+# Correction pour tests multiples (une comparaison par espèce)
+resultats$p_adj <- p.adjust(resultats$p_value, method = "BH")
+resultats <- resultats[order(resultats$p_value), ]
+resultats
+```
+
+::: callout-warning
+Un test de Wilcoxon est répété pour chaque espèce : la colonne `p_adj` (correction de Benjamini-Hochberg) est à utiliser de préférence à `p_value` brute pour décider quelles espèces ont réellement changé.
+:::
+
+```{r species-plot}
+#| label: fig-especes-signif
+#| fig-cap: "Abondance par espèce, 2020 vs 2025"
+
+df_long <- macro %>%
+  filter(Year %in% c(2020, 2025)) %>%
+  dplyr::select(ID_LAG, Year, all_of(especes_signif)) %>%
+  pivot_longer(all_of(especes_signif), names_to = "Espece", values_to = "Abondance")
+
+ggplot(df_long, aes(Espece, Abondance, fill = factor(Year))) +
+  geom_boxplot(position = position_dodge(0.8), alpha = 0.6) +
+  labs(x = "Espèce", y = "Abondance", fill = "Année") +
+  theme_minimal(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_manual(values = c("2020" = "#F8766D", "2025" = "#00BFC4"))
+```
+
+### b) Univarié 
+
 ```{r vars-env-niche}
 #| label: vars-env-niche
 
@@ -1048,58 +1100,118 @@ p_niche_uni
 ggsave("niche_realisee_univariee.svg", plot = p_niche_uni, width = 14, height = 9, units = "in")
 ```
 
-### 4) Wilcoxon par espèce (changement d'abondance 2020 vs 2025)
+### b-bis)  GAMM + selection avec "shrinkage" – ce qu'il y adéjà dans le papier (graph modifié) 
 
-Section conservée à l'identique : test de Wilcoxon apparié par espèce (correction de Benjamini-Hochberg pour tests multiples), complémentaire à la modélisation de niche ci-dessus.
+```{r gam-check-response}
+#| label: gam-verif-reponse
 
-```{r species-wilcoxon}
-#| label: wilcoxon-especes
+# Vérifie, pour chaque espèce cible, la présence de vraies bornes à 0 ET à 1
+# -> justifie le choix d'un GAM ordinal plutôt que binomial ou bêta brute
+for (sp in especes_signif) {
+  vals <- df_merged_final[[sp]]
+  cat(sp, ": n niveaux =", length(unique(na.omit(vals))), "| n = 0 :", sum(vals == 0, na.rm = TRUE), "| n = 1 :", sum(vals == 1, na.rm = TRUE), "| n dans ]0,1[ :", sum(vals > 0 & vals < 1, na.rm = TRUE), "\n")
+}
+```
 
-resultats <- data.frame(Espece = species_cols, W_statistic = NA_real_, p_value = NA_real_)
+```{r gam-model}
+#| label: gam-modele
 
-for (i in seq_along(species_cols)) {
-  sp <- species_cols[i]
-  df_wide <- macro %>%
-    filter(Year %in% c(2020, 2025)) %>%
-    dplyr::select(ID_LAG, Year, all_of(sp)) %>%
-    pivot_wider(names_from = Year, values_from = all_of(sp), names_prefix = "y") %>%
-    drop_na()
-  if (nrow(df_wide) > 1) {
-    test <- wilcox.test(df_wide$y2020, df_wide$y2025, paired = TRUE, exact = FALSE)
-    resultats$W_statistic[i] <- test$statistic
-    resultats$p_value[i] <- test$p.value
-  }
+vars_env <- c(
+  salinity = "Salinity", organic_matter = "Organic matter",
+  ilr_fines_vs_sand = "Fines/Sand ratio", ilr_clay_vs_silt = "Clay/Silt ratio",
+  water_level = "Water level (cm)", Surface = "Surface (m²)",
+  dist_trait_cote_m = "Distance to coastline (m)", mise_en_eau_num = "Reflooding date (j)",
+  duree_assec = "Dry period duration (j)"
+)
+
+df_gam <- df_merged_final %>% mutate(Site = factor(Site))
+
+# Convertit un recouvrement continu (grille de pas ~0.05) en catégorie ordonnée
+# entière 1..R, compressée aux seuls niveaux réellement observés pour l'espèce
+# donnée. 
+to_ordinal <- function(x, step = 0.05) {
+  snapped <- round(x / step) * step
+  lv <- sort(unique(snapped))
+  list(cat = match(snapped, lv), levels = lv, R = length(lv))
 }
 
-# Correction pour tests multiples (une comparaison par espèce)
-resultats$p_adj <- p.adjust(resultats$p_value, method = "BH")
-resultats <- resultats[order(resultats$p_value), ]
-resultats
+modeles <- list()
+niveaux <- list()  # correspondance catégorie -> valeur de recouvrement, par espèce
+
+for (sp in especes_signif) {
+  df_sp <- df_gam[complete.cases(df_gam[, c(sp, names(vars_env), "Site")]), ]
+
+  ord <- to_ordinal(df_sp[[sp]])
+  df_sp$cover_cat <- ord$cat
+  niveaux[[sp]] <- ord$levels
+
+  formule <- as.formula(paste0("cover_cat ~ ",
+                                paste0("s(", names(vars_env), ", k = 5)", collapse = " + "),
+                                " + s(Site, bs = 're')"))
+  mod <- gam(formule, data = df_sp, family = ocat(R = ord$R), method = "REML", select = TRUE)
+  modeles[[sp]] <- mod
+
+  cat("\n===", sp, "( R =", ord$R, "catégories ) ===\n")
+  print(summary(mod)$s.table)
+
+  cat("\n-- gam.check --\n")
+# Les 4 graphiques de gam.check() regroupés en une seule figure 2x2 par espèce
+par(mfrow = c(2, 2), oma = c(0, 0, 2, 0))
+gam.check(mod)
+mtext(sp, side = 3, line = 0.5, outer = TRUE, font = 2, cex = 1.1)
+par(mfrow = c(1, 1), oma = c(0, 0, 0, 0))
+}
+
+summary(modeles[["Althenia.filiformis"]])$dev.expl
+summary(modeles[["Ruppia.maritima"]])$dev.expl
+summary(modeles[["Lamprothamnium.papulosum"]])$dev.expl
 ```
 
-::: callout-warning
-Un test de Wilcoxon est répété pour chaque espèce : la colonne `p_adj` (correction de Benjamini-Hochberg) est à utiliser de préférence à `p_value` brute pour décider quelles espèces ont réellement changé.
-:::
+```{r gam-plots}
+#| label: fig-gam-effets
+#| fig-cap: "Recouvrement attendu par espèce (niche), effets partiels des GAM ordinaux"
 
-```{r species-plot}
-#| label: fig-especes-signif
-#| fig-cap: "Abondance par espèce, 2020 vs 2025"
+# Calcule les prédictions pour une combinaison espèce x variable, sur une
+# plage d'axe x COMMUNE à toutes les espèces pour cette variable (basée sur
+# l'ensemble des lagunes disponibles, pas seulement celles complètes pour
+# l'espèce en question) -- indispensable pour que les 3 courbes soient
+# directement superposables sur le même axe dans chaque facette
+compute_partiel <- function(sp, var, x_seq) {
+  mod   <- modeles[[sp]]
+  lv    <- niveaux[[sp]]  # valeurs de recouvrement correspondant à chaque catégorie
+  df_sp <- df_gam[complete.cases(df_gam[, c(sp, names(vars_env), "Site")]), ]
 
-df_long <- macro %>%
-  filter(Year %in% c(2020, 2025)) %>%
-  dplyr::select(ID_LAG, Year, all_of(especes_signif)) %>%
-  pivot_longer(all_of(especes_signif), names_to = "Espece", values_to = "Abondance")
+  newdat <- as.data.frame(lapply(names(vars_env), function(v) {
+    if (v == var) x_seq else rep(median(df_sp[[v]], na.rm = TRUE), length(x_seq))
+  }))
+  names(newdat) <- names(vars_env)
+  newdat$Site <- df_sp$Site[1]
 
-ggplot(df_long, aes(Espece, Abondance, fill = factor(Year))) +
-  geom_boxplot(position = position_dodge(0.8), alpha = 0.6) +
-  labs(x = "Espèce", y = "Abondance", fill = "Année") +
-  theme_minimal(base_size = 13) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  scale_fill_manual(values = c("2020" = "#F8766D", "2025" = "#00BFC4"))
-```
+  # predict.gam() avec family = ocat() renvoie une matrice n x R de
+  # probabilités prédites par catégorie -> le recouvrement ATTENDU est la
+  # moyenne pondérée par ces probabilités, ramenée sur l'échelle 0-1 d'origine
+  probs <- predict(mod, newdata = newdat, type = "response", exclude = "s(Site)")
+  expected_cover <- as.vector(probs %*% lv)
 
-```{r session-info}
-#| label: session-info
+  data.frame(x = x_seq, fit = expected_cover, variable = var, espece = sp)
+}
 
-sessionInfo()
+pred_all <- do.call(rbind, lapply(names(vars_env), function(var) {
+  x_seq <- seq(min(df_gam[[var]], na.rm = TRUE), max(df_gam[[var]], na.rm = TRUE), length.out = 200)
+  do.call(rbind, lapply(especes_signif, compute_partiel, var = var, x_seq = x_seq))
+}))
+pred_all$variable_label <- factor(vars_env[pred_all$variable], levels = unname(vars_env))
+
+ggplot(pred_all, aes(x, fit, color = espece, linetype = espece)) +
+  geom_line(linewidth = 1) +
+  facet_wrap(~variable_label, scales = "free_x", ncol = 3) +
+  # Palette Okabe-Ito : distinguable en cas de daltonisme (deutéranopie/protanopie)
+  scale_color_manual(values = c("#009E73", "#E69F00",  "#0072B2")) +
+  scale_linetype_manual(values = c("solid", "dashed", "dotted")) +
+  labs(x = NULL, y = "Expected cover", color = "Espèce", linetype = "Espèce") +
+  ylim(0, 1) +
+  theme_bw(base_size = 10) +
+  theme(legend.position = "bottom")
+
+#ggsave("GAMM_colorblind.svg", plot = j , width = 7, height = 5,units = "in")
 ```
