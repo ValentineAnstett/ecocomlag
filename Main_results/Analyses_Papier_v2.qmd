@@ -948,7 +948,7 @@ ggplot(df_long, aes(Espece, Abondance, fill = factor(Year))) +
   scale_fill_manual(values = c("2020" = "#F8766D", "2025" = "#00BFC4"))
 ```
 
-### b) Univarié 
+### b) Univarié
 
 ```{r vars-env-niche}
 #| label: vars-env-niche
