@@ -14,22 +14,10 @@ library(doParallel)
 setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale")
 
 # ------------------------------
-# créer zone shapefile
-# ------------------------------
-points = st_read("points_lagunes.shp")
-st_crs(points) # Vérifier le système de coordonnées
-#Création du cercle
-#Déjà fait = plus à refaire
-#circles = st_buffer(points, dist = 10) #dist = radius du cercle
-#st_write(circles, "cercles_20m.shp")
-
-
-
-# ------------------------------
 # Paramètres
 # ------------------------------
-img_dir   = "sentinel2_downloads"
-cloud_max = 0.1
+img_dir   = "sentinel2_downloads_V2_2025"
+cloud_max = 0.20
 
 # ------------------------------
 # Images disponibles
@@ -37,95 +25,108 @@ cloud_max = 0.1
 tiff_files = list.files(img_dir, pattern = "_B0[38]\\.tif$", full.names = TRUE)
 items_ids = unique(gsub("_(B0[38])\\.tif$", "", basename(tiff_files)))
 
-total_items <- length(items_ids)
+total_items = length(items_ids)
 message(total_items, " images à traiter")
 
 # ------------------------------
 # Fichier de suivi
 # ------------------------------
-progress_file <- "progress_images.txt"
+progress_file = "progress_images.txt"
 if (file.exists(progress_file)) file.remove(progress_file)
 
 # ------------------------------
+# Charger le shapefile UNE FOIS
+# ------------------------------
+zones   = st_read("cercles_20m.shp", quiet = TRUE)
+zones_v = vect("cercles_20m.shp")
+zones_id = zones_v$COD_LAG
+rm(zones)
+gc()
+# ------------------------------
 # Cluster parallèle
 # ------------------------------
-num_cores <- min(4, parallel::detectCores() - 1)
+num_cores = 2  # Limite volontaire pour la RAM : Les coeurs utilisent la même RAM en simultané
 cl <- makeCluster(num_cores)
 registerDoParallel(cl)
-
 # ------------------------------
-# Boucle NDWI uniquement
+# Boucle NDWI (valeurs brutes)
 # ------------------------------
 stats_list <- foreach(
   j = seq_along(items_ids),
-  .packages = c("terra","dplyr","tibble","sf")
+  .packages = c("terra", "dplyr", "tibble")
 ) %dopar% {
   
-  # Lecture shapefile dans le worker
-  zones <- st_read("cercles_20m.shp", quiet = TRUE)
-  zones_v <- vect(zones)
-  
+  # ID de l'image
   item_id <- items_ids[j]
   
-  files <- file.path(img_dir, paste0(item_id, c("_B03.tif","_B08.tif")))
+  # Fichiers B03 et B08
+  files <- file.path(img_dir, paste0(item_id, c("_B03.tif", "_B08.tif")))
   if (!all(file.exists(files))) return(NULL)
   
-  # Lecture bandes (réflectance)
+  # Lecture raster et mise à l’échelle
   B03 <- rast(files[1]) / 10000
   B08 <- rast(files[2]) / 10000
   
-  # NDWI (McFeeters)
+  # Calcul NDWI
   ndwi <- (B03 - B08) / (B03 + B08)
   
-  # Extraction NDWI
-  ndwi_vals <- extract(ndwi, zones_v)
+  # ------------------------------
+  # Extraction PIXEL PAR PIXEL
+  # ------------------------------
+  ndwi_vals <- extract(
+    ndwi,
+    zones_v,
+    touches = TRUE,   # tous les pixels qui touchent
+    weights = TRUE,   # proportion de recouvrement
+    ID = TRUE         # format long (1 pixel = 1 ligne)
+  )
   
-  # Filtrage nuages / pixels valides
-  valid_ratio <- apply(!is.na(ndwi_vals[, -1, drop = FALSE]), 1, mean)
-  keep <- valid_ratio >= (1 - cloud_max)
-  if (!any(keep)) return(NULL)
+  if (is.null(ndwi_vals) || nrow(ndwi_vals) == 0) return(NULL)
   
-  # Date image
+  # Renommer colonnes proprement
+  colnames(ndwi_vals) <- c("ID", "NDWI", "weight")
+  
+  # Supprimer les NA
+  ndwi_vals <- ndwi_vals[!is.na(ndwi_vals$NDWI), ]
+  if (nrow(ndwi_vals) == 0) return(NULL)
+  
+  # ------------------------------
+  # Filtre cloud AU NIVEAU ZONE
+  # ------------------------------
+  valid_ratio <- ndwi_vals %>%
+    group_by(ID) %>%
+    summarise(ratio = n() / sum(weight > 0), .groups = "drop")
+  
+  keep_ids <- valid_ratio$ID[valid_ratio$ratio >= (1 - cloud_max)]
+  ndwi_vals <- ndwi_vals[ndwi_vals$ID %in% keep_ids, ]
+  
+  if (nrow(ndwi_vals) == 0) return(NULL)
+  
+  # ------------------------------
+  # Ajouter infos
+  # ------------------------------
   date_img <- as.Date(substr(item_id, 12, 19), "%Y%m%d")
-  zone_idx <- ndwi_vals[keep, 1]
-  
-  # NDWI moyen par zone
-  ndwi_mean <- apply(
-    ndwi_vals[keep, -1, drop = FALSE],
-    1,
-    mean,
-    na.rm = TRUE
-  )
-  
-  # Classification NDWI
-  ndwi_class <- case_when(
-    ndwi_mean < -0.2            ~ "vegetation",
-    ndwi_mean >= -0.2 & ndwi_mean < 0 ~ "assec_sel",
-    ndwi_mean >= 0              ~ "eau"
-  )
   
   res <- tibble(
-    ID_LAG    = zones$COD_LAG[zone_idx],
-    date       = date_img,
-    ndwi_mean  = ndwi_mean,
-    ndwi_class = ndwi_class
+    ID_LAG = zones_id[ndwi_vals$ID],
+    date   = date_img,
+    ndwi   = ndwi_vals$NDWI,
+    weight = ndwi_vals$weight
   )
   
-  # Avancement
-  cat(sprintf("Image %d / %d traitée : %s\n", j, total_items, item_id),
-      file = progress_file, append = TRUE)
+  # Nettoyage mémoire
+  rm(B03, B08, ndwi, ndwi_vals)
+  gc()
   
   res
 }
 
-stopCluster(cl)
-
 # ------------------------------
 # Table finale
 # ------------------------------
-stats_list <- stats_list[!sapply(stats_list, is.null)]
+stats_list = stats_list[!sapply(stats_list, is.null)]
 
-stats_table <- bind_rows(stats_list) %>%
+stats_table = bind_rows(stats_list) %>%
   arrange(ID_LAG, date)
 
 
@@ -179,4 +180,394 @@ stats_table = stats_table %>%
 
 
 #Télécharger csv
-write.csv(stats_table, "ndwi_2020.csv", row.names = FALSE)
+write.csv(stats_table, "ndwi_2025.csv", row.names = FALSE)
+
+
+
+
+#test sequenciel 
+# ------------------------------
+# Packages
+# ------------------------------
+library(terra)
+library(dplyr)
+library(tibble)
+
+# ------------------------------
+# Répertoire de travail
+# ------------------------------
+setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale")
+
+# ------------------------------
+# Paramètres
+# ------------------------------
+img_dir   <- "sentinel2_downloads_2025"
+cloud_max <- 0.1
+
+# ------------------------------
+# Configuration terra
+# ------------------------------
+terraOptions(
+  threads = 1,      # sécurité maximale
+  progress = 0
+)
+
+# ------------------------------
+# Lister les images Sentinel-2
+# ------------------------------
+tiff_files <- list.files(
+  img_dir,
+  pattern = "_B0[38]\\.tif$",
+  full.names = TRUE
+)
+
+items_ids <- unique(
+  gsub("_(B0[38])\\.tif$", "", basename(tiff_files))
+)
+
+message(length(items_ids), " images à traiter")
+
+# ------------------------------
+# Charger les zones UNE FOIS
+# ------------------------------
+zones_v <- vect("cercles_20m.shp")
+
+# ID interne stable pour zonal()
+zones_v$zone_id <- seq_len(nrow(zones_v))
+
+# ------------------------------
+# Liste de sortie
+# ------------------------------
+res_all <- vector("list", length(items_ids))
+
+# ------------------------------
+# Boucle principale sur les images
+# ------------------------------
+for (j in seq_along(items_ids)) {
+  
+  item_id <- items_ids[j]
+  message("Traitement : ", item_id)
+  
+  # Fichiers B03 et B08
+  files <- file.path(
+    img_dir,
+    paste0(item_id, c("_B03.tif", "_B08.tif"))
+  )
+  
+  if (!all(file.exists(files))) {
+    message("  -> bandes manquantes, ignorée")
+    next
+  }
+  
+  # ------------------------------
+  # Lecture des rasters
+  # ------------------------------
+  B03 <- rast(files[1]) / 10000
+  B08 <- rast(files[2]) / 10000
+  
+  # Harmoniser projection si besoin
+  if (!compareGeom(B03, zones_v, stopOnError = FALSE)) {
+    zones_v <- project(zones_v, B03)
+  }
+  
+  # ------------------------------
+  # Crop aux zones (GROS gain perf)
+  # ------------------------------
+  B03c <- crop(B03, zones_v)
+  B08c <- crop(B08, zones_v)
+  
+  rm(B03, B08)
+  gc()
+  
+  # ------------------------------
+  # NDWI
+  # ------------------------------
+  ndwi <- (B03c - B08c) / (B03c + B08c)
+  
+  rm(B03c, B08c)
+  gc()
+  
+  # ------------------------------
+  # Mask avec les polygones
+  # ------------------------------
+  ndwi_m <- mask(ndwi, zones_v)
+  
+  rm(ndwi)
+  gc()
+  
+  # ------------------------------
+  # Proportion de pixels valides
+  # ------------------------------
+  valid_ratio <- zonal(
+    !is.na(ndwi_m),
+    zones_v,
+    fun = "mean",
+    na.rm = TRUE
+  )
+  
+  keep <- valid_ratio$mean >= (1 - cloud_max)
+  if (!any(keep)) {
+    message("  -> trop de nuages")
+    rm(ndwi_m)
+    gc()
+    next
+  }
+  
+  # ------------------------------
+  # NDWI moyen par zone
+  # ------------------------------
+  ndwi_mean <- zonal(
+    ndwi_m,
+    zones_v,
+    fun = "mean",
+    na.rm = TRUE
+  )
+  
+  rm(ndwi_m)
+  gc()
+  
+  # ------------------------------
+  # Date image
+  # ------------------------------
+  date_img <- as.Date(substr(item_id, 12, 19), "%Y%m%d")
+  
+  # ------------------------------
+  # Résultat
+  # ------------------------------
+  res <- tibble(
+    ID_LAG    = zones_v$COD_LAG[ndwi_mean$zone_id],
+    date      = date_img,
+    ndwi_mean = ndwi_mean$mean
+  ) %>%
+    slice(keep) %>%
+    mutate(
+      ndwi_class = case_when(
+        ndwi_mean < -0.2 ~ "vegetation",
+        ndwi_mean < 0    ~ "assec_sel",
+        TRUE             ~ "eau"
+      )
+    )
+  
+  res_all[[j]] <- res
+}
+
+
+#Test paralleliser 
+library(future)
+library(future.apply)
+
+plan(multisession, workers = 2)  # ajuste selon ta RAM
+
+# ------------------------------
+# Lister les images Sentinel-2
+# ------------------------------
+img_dir <- "sentinel2_downloads_2025"
+cloud_max <- 0.1
+
+tiff_files <- list.files(
+  img_dir,
+  pattern = "_B0[38]\\.tif$",
+  full.names = TRUE
+)
+
+items_ids <- unique(
+  gsub("_(B0[38])\\.tif$", "", basename(tiff_files))
+)
+
+length(items_ids)
+
+
+
+process_one_image <- function(item_id, cloud_max) {
+  
+  library(terra)
+  library(dplyr)
+  library(tibble)
+  
+  terraOptions(threads = 1, progress = 0)
+  
+  zones_v <- vect("cercles_20m.shp")
+  zones_v$zone_id <- seq_len(nrow(zones_v))
+  
+  files <- file.path(
+    "sentinel2_downloads_2025",
+    paste0(item_id, c("_B03.tif", "_B08.tif"))
+  )
+  if (!all(file.exists(files))) return(NULL)
+  
+  B03 <- rast(files[1]) / 10000
+  B08 <- rast(files[2]) / 10000
+  
+  if (!same.crs(B03, zones_v)) {
+    zones_v <- project(zones_v, crs(B03))
+  }
+  
+  ndwi <- (crop(B03, zones_v) - crop(B08, zones_v)) /
+    (crop(B03, zones_v) + crop(B08, zones_v))
+  
+  ndwi_m <- mask(ndwi, zones_v)
+  
+  valid_ratio <- zonal(!is.na(ndwi_m), zones_v, "mean")$mean
+  keep <- valid_ratio >= (1 - cloud_max)
+  if (!any(keep)) return(NULL)
+  
+  ndwi_mean <- zonal(ndwi_m, zones_v, "mean", na.rm = TRUE)
+  
+  date_img <- as.Date(substr(item_id, 12, 19), "%Y%m%d")
+  
+  tibble(
+    ID_LAG    = zones_v$COD_LAG[ndwi_mean$zone_id],
+    date      = date_img,
+    ndwi_mean = ndwi_mean$mean
+  ) %>%
+    slice(keep) %>%
+    mutate(
+      ndwi_class = case_when(
+        ndwi_mean < -0.2 ~ "vegetation",
+        ndwi_mean < 0    ~ "assec_sel",
+        TRUE             ~ "eau"
+      )
+    )
+}
+
+res_all = future_lapply(
+  items_ids,
+  process_one_image,
+  cloud_max = cloud_max, 
+  future.seed = TRUE
+)
+
+stats_ndwi <- bind_rows(res_all)
+
+
+
+####Sans Parralelisation -----
+library(sf)
+library(terra)
+library(dplyr)
+library(tibble)
+
+setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale")
+
+img_dir   = "sentinel2_downloads_V2_2025"
+cloud_max = 0.20
+
+tiff_files = list.files(img_dir, pattern = "_B0[38]\\.tif$", full.names = TRUE)
+items_ids = unique(gsub("_(B0[38])\\.tif$", "", basename(tiff_files)))
+
+total_items = length(items_ids)
+message(total_items, " images à traiter")
+
+zones   = st_read("cercles_20m.shp", quiet = TRUE)
+zones_v = vect("cercles_20m.shp")
+zones_id = zones_v$COD_LAG
+rm(zones)
+gc()
+
+start_time <- Sys.time()
+pb <- txtProgressBar(min = 0, max = total_items, style = 3)
+
+# ------------------------------
+# Boucle NDWI (séquentielle)
+# ------------------------------
+stats_list <- vector("list", length(items_ids))
+
+for (j in seq_along(items_ids)) {
+  
+  # ID de l'image
+  item_id <- items_ids[j]
+  
+  # Progress bar
+  setTxtProgressBar(pb, j)
+  
+  # Calcul ETA toutes les 5 images (évite spam console)
+  if (j %% 5 == 0) {
+    
+    elapsed <- as.numeric(difftime(Sys.time(), start_time, units = "secs"))
+    avg_time <- elapsed / j
+    remaining <- avg_time * (total_items - j)
+    
+    eta_time <- Sys.time() + remaining
+    
+    message(
+      " | Image ", j, "/", total_items,
+      " | Temps écoulé: ", round(elapsed/60, 1), " min",
+      " | ETA: ", format(eta_time, "%H:%M:%S")
+    )
+  }
+  
+  # Fichiers B03 et B08
+  files <- file.path(img_dir, paste0(item_id, c("_B03.tif", "_B08.tif")))
+  if (!all(file.exists(files))) next
+  
+  # Lecture raster
+  B03 <- rast(files[1]) / 10000
+  B08 <- rast(files[2]) / 10000
+  
+  # NDWI
+  ndwi <- (B03 - B08) / (B03 + B08)
+  
+  # ------------------------------
+  # Extraction pixel
+  # ------------------------------
+  ndwi_vals <- extract(
+    ndwi,
+    zones_v,
+    touches = TRUE,
+    weights = TRUE,
+    ID = TRUE
+  )
+  
+  if (is.null(ndwi_vals) || nrow(ndwi_vals) == 0) next
+  
+  colnames(ndwi_vals) <- c("ID", "NDWI", "weight")
+  
+  # Supprimer NA
+  ndwi_vals <- ndwi_vals[!is.na(ndwi_vals$NDWI), ]
+  if (nrow(ndwi_vals) == 0) next
+  
+  # ------------------------------
+  # Filtre cloud
+  # ------------------------------
+  valid_ratio <- ndwi_vals %>%
+    group_by(ID) %>%
+    summarise(ratio = n() / sum(weight > 0), .groups = "drop")
+  
+  keep_ids <- valid_ratio$ID[valid_ratio$ratio >= (1 - cloud_max)]
+  ndwi_vals <- ndwi_vals[ndwi_vals$ID %in% keep_ids, ]
+  
+  if (nrow(ndwi_vals) == 0) next
+  
+  # ------------------------------
+  # Ajouter infos
+  # ------------------------------
+  date_img <- as.Date(substr(item_id, 12, 19), "%Y%m%d")
+  
+  res <- tibble(
+    ID_LAG = zones_id[ndwi_vals$ID],
+    date   = date_img,
+    ndwi   = ndwi_vals$NDWI,
+    weight = ndwi_vals$weight
+  )
+  
+  write.table(res,
+              file = "ndwi_pixels.csv",
+              append = TRUE,
+              sep = ",",
+              row.names = FALSE,
+              col.names = !file.exists("ndwi_pixels.csv"))
+  
+  # Nettoyage mémoire
+  rm(B03, B08, ndwi, ndwi_vals)
+  gc()
+}
+close(pb)
+# ------------------------------
+# Table finale
+# ------------------------------
+stats_list <- stats_list[!sapply(stats_list, is.null)]
+
+stats_table <- bind_rows(stats_list) %>%
+  arrange(ID_LAG, date)
+
+

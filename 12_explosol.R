@@ -6,10 +6,10 @@ Sol = read.csv("Sol_21_25.csv", header = TRUE, sep = ",", dec=",")
 Sol= Sol %>%
   mutate(across(4:14, as.numeric))
 
-Chimique = Sol [, -c(4, 8:14)]
+Chimique = Sol [, -c(4:7)]
 
 
-Type_sol = Sol [, -c(5:7)]
+Type_sol = Sol [, -c(8:13)]
 
 ####HISTOGRAMMES ----
 
@@ -458,3 +458,241 @@ resultats_permanova_sol = faire_permanova(
 )
 
 print(resultats_permanova_sol)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+##### Code Claude 
+
+library(readr)
+Sol <- read_csv("~/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_sol/Sol.csv")
+
+# ============================================================
+# Histogrammes par site : profil chimique vs type de sol
+# ============================================================
+
+library(ggplot2)
+library(tidyr)
+library(dplyr, warn.conflicts = FALSE)
+
+select <- dplyr::select
+
+# --- Définition des groupes de variables --------------------
+vars_chimiques  <- c("P2O5", "nitrogen", "CN")
+vars_type_sol   <- c("organic_matter", "CAILLOUX", "clay", "silt", "sand",
+                     "ilr_fines_vs_sand", "ilr_clay_vs_silt")
+
+sites <- unique(Sol$Site)
+
+# ============================================================
+# Boucle sur chaque site
+# ============================================================
+for (s in sites) {
+  
+  Sol_site <- Sol %>% filter(Site == s)
+  
+  # ---- 1. Histogrammes CHIMIQUES (facettes par variable) ---
+  Sol_chim <- Sol_site %>%
+    select(ID_LAG, all_of(vars_chimiques)) %>%
+    pivot_longer(cols = all_of(vars_chimiques),
+                 names_to  = "Variable",
+                 values_to = "Valeur")
+  
+  p_chim <- ggplot(Sol_chim, aes(x = ID_LAG, y = Valeur, fill = Variable)) +
+    geom_bar(stat = "identity", position = "dodge", colour = "white", linewidth = 0.2) +
+    facet_wrap(~ Variable, scales = "free_y", ncol = 1) +
+    scale_fill_brewer(palette = "Set2") +
+    labs(
+      title    = paste0("Site ", s, " — Profil chimique"),
+      subtitle = "Variables : P2O5, nitrogen, CN",
+      x        = "Lagune (ID_LAG)",
+      y        = "Valeur",
+      fill     = "Variable"
+    ) +
+    theme_bw(base_size = 11) +
+    theme(
+      axis.text.x      = element_text(angle = 45, hjust = 1, size = 8),
+      strip.background = element_rect(fill = "#E8F4FD"),
+      strip.text       = element_text(face = "bold"),
+      plot.title       = element_text(face = "bold", size = 13),
+      legend.position  = "none"
+    )
+  
+  print(p_chim)
+  
+  # ---- 2. Histogrammes TYPE DE SOL (facettes par variable) -
+  Sol_sol <- Sol_site %>%
+    select(ID_LAG, all_of(vars_type_sol)) %>%
+    pivot_longer(cols = all_of(vars_type_sol),
+                 names_to  = "Variable",
+                 values_to = "Valeur")
+  
+  p_sol <- ggplot(Sol_sol, aes(x = ID_LAG, y = Valeur, fill = Variable)) +
+    geom_bar(stat = "identity", position = "dodge", colour = "white", linewidth = 0.2) +
+    facet_wrap(~ Variable, scales = "free_y", ncol = 2) +
+    scale_fill_brewer(palette = "Set3") +
+    labs(
+      title    = paste0("Site ", s, " — Profil type de sol"),
+      subtitle = "Variables : organic_matter, CAILLOUX, clay, silt, sand, ilr_fines_vs_sand, ilr_clay_vs_silt",
+      x        = "Lagune (ID_LAG)",
+      y        = "Valeur",
+      fill     = "Variable"
+    ) +
+    theme_bw(base_size = 11) +
+    theme(
+      axis.text.x      = element_text(angle = 45, hjust = 1, size = 8),
+      strip.background = element_rect(fill = "#FFF3E0"),
+      strip.text       = element_text(face = "bold"),
+      plot.title       = element_text(face = "bold", size = 13),
+      legend.position  = "none"
+    )
+  
+  print(p_sol)
+  
+  message("✓ Site ", s, " — graphiques affichés")
+}
+
+message("\nTerminé ! ", length(sites) * 2, " graphiques affichés")
+
+
+#Comparaison 
+
+
+# ---- 1. Profil chimique ------------------------------------
+Sol_chim2 <- Sol %>%
+  select(ID_LAG, Site, all_of(vars_chimiques)) %>%
+  pivot_longer(cols = all_of(vars_chimiques),
+               names_to  = "Variable",
+               values_to = "Valeur")
+
+p_chim2 <- ggplot(Sol_chim2, aes(x = ID_LAG, y = Valeur, fill = Site)) +
+  geom_bar(stat = "identity", colour = "white", linewidth = 0.2) +
+  facet_wrap(~ Variable, scales = "free_y", ncol = 1) +
+  labs(
+    title = "Profil chimique — toutes les lagunes",
+    x     = "Lagune (ID_LAG)",
+    y     = "Valeur",
+    fill  = "Site"
+  ) +
+  theme_bw(base_size = 11) +
+  theme(
+    axis.text.x      = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7),
+    strip.background = element_rect(fill = "#E8F4FD"),
+    strip.text       = element_text(face = "bold"),
+    plot.title       = element_text(face = "bold", size = 13)
+  )
+
+print(p_chim2)
+
+# ---- 2. Profil type de sol ---------------------------------
+Sol_sol2 <- Sol %>%
+  select(ID_LAG, Site, all_of(vars_type_sol)) %>%
+  pivot_longer(cols = all_of(vars_type_sol),
+               names_to  = "Variable",
+               values_to = "Valeur")
+
+p_sol2 <- ggplot(Sol_sol2, aes(x = ID_LAG, y = Valeur, fill = Site)) +
+  geom_bar(stat = "identity", colour = "white", linewidth = 0.2) +
+  facet_wrap(~ Variable, scales = "free_y", ncol = 2) +
+  labs(
+    title = "Profil type de sol — toutes les lagunes",
+    x     = "Lagune (ID_LAG)",
+    y     = "Valeur",
+    fill  = "Site"
+  ) +
+  theme_bw(base_size = 11) +
+  theme(
+    axis.text.x      = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7),
+    strip.background = element_rect(fill = "#FFF3E0"),
+    strip.text       = element_text(face = "bold"),
+    plot.title       = element_text(face = "bold", size = 13)
+  )
+
+print(p_sol2)
+
+
+#Test opuitlirs 
+
+# ============================================================
+# Boxplots par variable : outliers intra-site et inter-sites
+# ============================================================
+
+library(ggplot2)
+library(tidyr)
+library(dplyr, warn.conflicts = FALSE)
+
+select <- dplyr::select
+
+# --- Définition des groupes de variables --------------------
+vars_chimiques <- c("P2O5", "nitrogen", "CN")
+vars_type_sol  <- c("organic_matter", "CAILLOUX", "clay", "silt", "sand",
+                    "ilr_fines_vs_sand", "ilr_clay_vs_silt")
+
+# --- Mise en forme longue -----------------------------------
+Sol_chim3 <- Sol %>%
+  select(ID_LAG, Site, all_of(vars_chimiques)) %>%
+  pivot_longer(cols = all_of(vars_chimiques),
+               names_to = "Variable", values_to = "Valeur")
+
+Sol_sol3 <- Sol %>%
+  select(ID_LAG, Site, all_of(vars_type_sol)) %>%
+  pivot_longer(cols = all_of(vars_type_sol),
+               names_to = "Variable", values_to = "Valeur")
+
+# --- Fonction boxplot ----------------------------------------
+make_boxplot <- function(data, titre, couleur_strip) {
+  ggplot(data, aes(x = Site, y = Valeur, fill = Site)) +
+    geom_boxplot(outlier.shape = NA, alpha = 0.6, width = 0.6) +
+    geom_jitter(aes(label = ID_LAG), width = 0.15, size = 1.8,
+                alpha = 0.8, colour = "grey20") +
+    ggrepel::geom_text_repel(
+      data = . %>% group_by(Variable, Site) %>%
+        mutate(
+          q1  = quantile(Valeur, 0.25),
+          q3  = quantile(Valeur, 0.75),
+          iqr = q3 - q1,
+          outlier = Valeur < (q1 - 1.5 * iqr) | Valeur > (q3 + 1.5 * iqr)
+        ) %>% filter(outlier),
+      aes(label = ID_LAG),
+      size = 2.5, max.overlaps = 20,
+      box.padding = 0.3, colour = "red"
+    ) +
+    facet_wrap(~ Variable, scales = "free_y") +
+    scale_fill_brewer(palette = "Set3") +
+    labs(title = titre, x = "Site", y = "Valeur") +
+    theme_bw(base_size = 11) +
+    theme(
+      strip.background = element_rect(fill = couleur_strip),
+      strip.text       = element_text(face = "bold"),
+      plot.title       = element_text(face = "bold", size = 13),
+      legend.position  = "none"
+    )
+}
+
+# --- Graphiques ---------------------------------------------
+if (!requireNamespace("ggrepel", quietly = TRUE)) install.packages("ggrepel")
+library(ggrepel)
+
+print(make_boxplot(Sol_chim3, "Profil chimique — outliers par site",    "#E8F4FD"))
+print(make_boxplot(Sol_sol3,  "Profil type de sol — outliers par site", "#FFF3E0"))

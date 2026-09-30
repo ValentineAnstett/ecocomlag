@@ -188,8 +188,8 @@ Sol = Sol %>%
 
 # Vérifier et corriger la somme si nécessaire
 Sol = Sol %>%
-  mutate(across(c(clay, sand, silt), ~ .x / (clay + sand + silt))) %>%
-  mutate(across(c(clay, sand, silt), ~ replace(.x, .x == 0, 1e-6)))
+  mutate(across(c(clay, sand, silt), ~ replace(.x, .x == 0, 1e-6))) %>%
+  mutate(across(c(clay, sand, silt), ~ .x / (clay + sand + silt)))
 
 # Calcul ILR (3 composantes → 2 coordonnées)
 ilr_mat = as.data.frame(ilr(acomp(Sol[, c("clay", "silt", "sand")])))
@@ -271,10 +271,29 @@ getwd()
 setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Global/Data/Processed_Topo")
 Topographie = read.csv("Topographie.csv", header = TRUE, sep = ",", dec=",")
 
-Data_envir_test = merge(data_envir, Topographie, 
+Data_envir_V2 = merge(data_envir, Topographie, 
                    by = c("Site", "ID_LAG"), 
                    all = FALSE)
-write.csv(Data_envir_test, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Data_envir.csv", row.names = FALSE)
+
+#Ajouter Hydropériode 
+getwd()
+setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Global")
+Hydroperiode_2025 = read.csv("hydroperiode_2025_Vfinale.csv", header = TRUE, sep = ",", dec=",")
+Hydroperiode_2020 = read.csv("hydroperiode_2020_Vfinale.csv", header = TRUE, sep = ",", dec=",")
+
+hydro_all <- rbind(
+  hydroperiode_2020_Vfinale,
+  hydroperiode_2025_Vfinale
+)
+
+Data_envir_test <- merge(
+  Data_envir_V2,
+  hydro_all,
+  by = c("Year", "Site", "ID_LAG"),
+  all.x = TRUE
+)
+
+write.csv(Data_envir_test, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Data_envir_V3.csv", row.names = FALSE)
 
 #################################################################
 ########### DATAFRAME Indices de présence macrophytes ##########

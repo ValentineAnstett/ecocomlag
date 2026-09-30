@@ -6,9 +6,10 @@ setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Pro
 Macro_Ptscontacts= read.csv("Macro_Ptscontacts.csv", header = TRUE, sep = ",", dec=".")
 Macro_Ptscontacts = Macro_Ptscontacts %>%
   filter(!(ID_LAG %in% c("G_07", "G_06","D_04","D_05")))
+Macro_Ptscontacts = Macro_Ptscontacts %>% dplyr::select(-c(algues))
 Macro_Ptscontacts = Macro_Ptscontacts[, colSums(Macro_Ptscontacts != 0, na.rm = TRUE) > 0]
 
-Macro_Ptscontacts_sanstot = Macro_Ptscontacts [, -15]
+Macro_Ptscontacts_sanstot = Macro_Ptscontacts [, -13]
 
 
 ###  Boxplots 2020 vs 2025 ----
@@ -138,13 +139,13 @@ ggplot(df_n_sp, aes(x = n_sp_2020, y = n_sp_2025, color = Site)) +
     plot.margin = margin(t = 10, r = 15, b = 10, l = 15)
   )
 
-##AFC ####
+##ACP Simplifié ####
 
 #Transformation des datas avec Hellinger
-data_afc = Macro_Ptscontacts_sanstot[,-15]
-data_afc_clean = data_afc %>% mutate(across(everything(), ~replace_na(.x, 0)))
-meta = data_afc_clean %>% dplyr::select(Year, Site, ID_LAG)
-data_num = data_afc_clean %>% dplyr::select(-Year, -Site, -ID_LAG)
+data_acp = Macro_Ptscontacts_sanstot[,-13]
+data_acp_clean = data_acp %>% mutate(across(everything(), ~replace_na(.x, 0)))
+meta = data_acp_clean %>% dplyr::select(Year, Site, ID_LAG)
+data_num = data_acp_clean %>% dplyr::select(-Year, -Site, -ID_LAG)
 data_hellinger = decostand(data_num, method = "hellinger")
 
 #Faire l'ACP sur données transformées
@@ -159,6 +160,11 @@ coord_ind = cbind(meta, coord_ind)
 coord_var = as.data.frame(pca_res$var$coord[, 1:2])
 colnames(coord_var) = c("Dim.1", "Dim.2")
 coord_var$Espece = rownames(coord_var)
+
+# Pourcentages de variance expliquée
+eig_vals = pca_res$eig
+dim1_var = round(eig_vals[1, 2], 1)  # % de variance pour Dim 1
+dim2_var = round(eig_vals[2, 2], 1)  # % de variance pour Dim 2
 
 #### Graph avec polygone avec les lagunes outliers sorties : 
 get_hull = function(df) df[chull(df$Dim.1, df$Dim.2), ]
@@ -182,8 +188,8 @@ ggplot(coord_ind %>% filter(!ID_LAG %in% c("G_07", "G_06","D_04","D_05")), aes(x
   geom_hline(yintercept = 0, linetype = "dotted", color = "grey40") +
   geom_vline(xintercept = 0, linetype = "dotted", color = "grey40") +
   labs(
-    x = "Dim 1",
-    y = "Dim 2"
+    x = paste0("Dim 1 (", dim1_var, "%)"),
+    y = paste0("Dim 2 (", dim2_var, "%)")
   ) +
   theme_minimal() +
   theme(
@@ -197,10 +203,11 @@ ggplot(coord_ind %>% filter(!ID_LAG %in% c("G_07", "G_06","D_04","D_05")), aes(x
     strip.text = element_text(size = 28),                     
   )
 
+pca_res$var$contrib
 
 ##Graph avec polygone par année 
 
-ggplot(coord_ind %>% filter(!ID_LAG %in% c("G_07", "G_06","D_04","D_05")), 
+ggplot(coord_ind %>% filter(!ID_LAG %in% c("G_07", "G_06","D_04","D_05","K_03", "K_10", "B_06", "K_08", "B_09", "K_10", "B_01", "K_09", "B_10", "B_08")), 
        aes(x = Dim.1, y = Dim.2, color = as.factor(Year))) +
   geom_point(size = 3, alpha = 0.8) +
   geom_polygon(
@@ -307,4 +314,8 @@ ggplot() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 
-
+#Identifier les outliers 
+coord_ind$dist_origin <- sqrt(coord_ind$Dim.1^2 + coord_ind$Dim.2^2)
+outliers_top10 <- coord_ind %>%
+  arrange(desc(dist_origin)) %>%
+  slice(1:10)

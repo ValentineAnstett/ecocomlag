@@ -2,6 +2,8 @@ getwd()
 setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_GPS")
 Macro_Ptscontacts_GPS= read.csv("Macro_Ptscontacts_GPS.csv", header = TRUE, sep = ",", dec=".")
 
+library(leaflet)
+
 Macro_Ptscontacts_GPS <- Macro_Ptscontacts_GPS %>%
   mutate(
     Lon = as.numeric(gsub(",", ".", as.character(Lon))),
@@ -85,8 +87,10 @@ htmlwidgets::saveWidget(carto_macrophytes, "carto_macrophytes.html", selfcontain
 
 #### Carte article -----
 # --- Lire et préparer le shapefile des côtes ---
-cotes_lines <- st_read("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Terre_Mer/SHAPE/Limite_terre-mer_facade_Mediterranee_ligne.shp") %>%
+cotes_lines <- st_read("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Terre_Mer/Limite_terre-mer_facade_Mediterranee_ligne.shp") %>%
   st_transform(4326)  # reprojection WGS84 pour Leaflet
+
+
 
 # --- Préparer les coordonnées des sites ---
 sites_coord <- Macro_Ptscontacts_GPS %>%
@@ -222,3 +226,181 @@ carte_globale = leaflet(sites_coord) %>%
   addProviderTiles(providers$Esri.WorldGrayCanvas)
 
 carte_globale
+
+
+#Enregister en pdf 
+library(mapview)
+library(webshot2)
+
+mapview::mapshot2(
+  carto_sites_simple,
+  file = "carto_sites_leafletV1.pdf",
+  remove_controls = c(
+    "zoomControl"
+  )
+)
+
+
+# ------------------------------------------------------------
+##TEST CARTE AVEC GGPLOT2 
+# ------------------------------------------------------------
+
+
+library(sf)
+library(dplyr)
+library(ggplot2)
+
+# ------------------------------------------------------------
+# Préparer les données spatiales
+# ------------------------------------------------------------
+
+# Sites
+sites_sf <- sites_coord %>%
+  st_as_sf(
+    coords = c("Lon", "Lat"),
+    crs = 4326,
+    remove = FALSE
+  )
+
+# Sites en croix
+sites_croix_sf <- sites_sf %>%
+  filter(Site %in% sites_croix)
+
+# Sites en cercles
+sites_cercles_sf <- sites_sf %>%
+  filter(!Site %in% sites_croix)
+
+# Villes
+villes_sf <- villes_maj %>%
+  st_as_sf(
+    coords = c("lon", "lat"),
+    crs = 4326,
+    remove = FALSE
+  )
+
+
+# ------------------------------------------------------------
+# Projection pour la carte
+# ------------------------------------------------------------
+
+# Lambert-93
+cotes_plot <- st_transform(cotes_lines, 2154)
+sites_plot <- st_transform(sites_sf, 2154)
+sites_croix_plot <- st_transform(sites_croix_sf, 2154)
+sites_cercles_plot <- st_transform(sites_cercles_sf, 2154)
+villes_plot <- st_transform(villes_sf, 2154)
+
+
+# ------------------------------------------------------------
+# Récupérer les coordonnées pour les labels
+# ------------------------------------------------------------
+
+sites_coord_plot <- st_coordinates(sites_plot)
+
+sites_plot <- sites_plot %>%
+  mutate(
+    X = sites_coord_plot[, 1],
+    Y = sites_coord_plot[, 2]
+  )
+
+villes_coord_plot <- st_coordinates(villes_plot)
+
+villes_plot <- villes_plot %>%
+  mutate(
+    X = villes_coord_plot[, 1],
+    Y = villes_coord_plot[, 2]
+  )
+
+
+# ------------------------------------------------------------
+# Carte
+# ------------------------------------------------------------
+
+carte_ggplot <- ggplot() +
+  
+  # Côte
+  geom_sf(
+    data = cotes_plot,
+    colour = "#1B263B",
+    linewidth = 0.4
+  ) +
+  
+  # Sites ronds
+  geom_sf(
+    data = sites_cercles_plot,
+    shape = 21,
+    size = 3,
+    fill = "black",
+    colour = "black",
+    stroke = 0
+  ) +
+  
+  # Sites en croix
+  geom_sf(
+    data = sites_croix_plot,
+    shape = 4,
+    size = 5,
+    linewidth = 1.2,
+    colour = "black"
+  ) +
+  
+  # Labels des sites au-dessus
+  geom_text(
+    data = sites_plot %>%
+      filter(!Site %in% c("A", "C", "F")),
+    aes(
+      x = X,
+      y = Y,
+      label = Site
+    ),
+    nudge_y = 15000,
+    fontface = "bold",
+    size = 6,
+    colour = "#1B263B"
+  ) +
+  
+  # Labels des sites en dessous
+  geom_text(
+    data = sites_plot %>%
+      filter(Site %in% c("A", "C", "F")),
+    aes(
+      x = X,
+      y = Y,
+      label = Site
+    ),
+    nudge_y = -15000,
+    fontface = "bold",
+    size = 6,
+    colour = "#1B263B"
+  ) +
+  
+  # Villes
+  geom_text(
+    data = villes_plot,
+    aes(
+      x = X,
+      y = Y,
+      label = nom
+    ),
+    nudge_y = 20000,
+    fontface = "bold",
+    size = 6,
+    colour = "#333333"
+  ) +
+  
+  # Projection
+  coord_sf(
+    expand = FALSE
+  ) +
+  
+  theme_void() +
+  
+  theme(
+    plot.margin = margin(5, 5, 5, 5),
+    panel.background = element_rect(
+      fill = "white",
+      colour = NA
+    )
+  )
+
+carte_ggplot

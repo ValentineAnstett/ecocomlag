@@ -11,7 +11,7 @@ min_consec = 3  #au moins x images conssecutives pour valider l'etat
 
 # Shapefile ----
 #NDWI des pixels de chaque cercles au différentes dates
-pixels = read.csv("ndwi_pixels_2020.csv")
+pixels = read.csv("ndwi_pixels_2025.csv")
 pixels$date = as.Date(pixels$date)
 
 
@@ -81,5 +81,5 @@ for (z in zones) {
 print(result_final)
 
 
-write.csv(result_final, "hydroperiode_2020_Vfinale.csv", row.names = FALSE)
+write.csv(result_final, "hydroperiode_2025_V2.csv", row.names = FALSE)
 

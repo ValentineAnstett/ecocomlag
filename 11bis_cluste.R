@@ -22,9 +22,9 @@ Macro = Macro %>% dplyr::select(-c(algues,TOT))
 Macro = Macro[, colSums(Macro != 0, na.rm = TRUE) > 0]
 
 
-comm <- Macro[, 4:12] #Sortir les colonnes avec les chr
-comm <- comm[rowSums(comm) > 0, ] #Supprimer les lignes vides 
-comm <- comm[, colSums(comm) > 0]
+comm = Macro[, 4:12] #Sortir les colonnes avec les chr
+comm = comm[rowSums(comm) > 0, ] #Supprimer les lignes vides 
+comm = comm[, colSums(comm) > 0]
 
 
 # Distance de Bray-Curtis
@@ -32,29 +32,31 @@ dist_bray = vegdist(comm, method = "bray")
 
 #Cophenetic : choix de la méthode de clustering 
 
-#methods <- c("complete", "average", "ward.D2")
+#methods = c("complete", "average", "ward.D2")
 
-#coph <- sapply(methods, function(m){
-  #hc <- hclust(dist_bray, method = m)
+#coph = sapply(methods, function(m){
+  #hc = hclust(dist_bray, method = m)
   #cor(dist_bray, cophenetic(hc))
 #})
 
-#best_method <- methods[which.max(coph)]
-#hc <- hclust(dist_bray, method = best_method)
+#best_method = methods[which.max(coph)]
+#hc = hclust(dist_bray, method = best_method)
 
 
 #Forcer Ward 
-hc <- hclust(dist_bray, method = "ward.D2")
-best_method <- "ward.D2"
+hc = hclust(dist_bray, method = "ward.D2")
+best_method = "ward.D2"
 cat("Méthode retenue :", best_method, "\n")
 cat("Corrélation cophenétique :", max(coph), "\n")
 
 #Permanova
 # On coupe l'arbre en k groupes
-k <- 3
-groups <- cutree(hc, k = k)
+k = 3
+groups = cutree(hc, k = k)
 
-adonis_res <- adonis2(comm ~ as.factor(groups),
+set.seed(123)
+
+adonis_res = adonis2(comm ~ as.factor(groups),
                       method = "bray",
                       permutations = 999)
 
@@ -65,30 +67,30 @@ print(adonis_res)
 # Dendrogramme ----
 
 
-dend <- dendro_data(hc)
+dend = dendro_data(hc)
 
-leaf_pos <- dend$labels
-leaf_pos$site <- leaf_pos$label
-leaf_pos <- leaf_pos[order(leaf_pos$x), ]
+leaf_pos = dend$labels
+leaf_pos$site = leaf_pos$label
+leaf_pos = leaf_pos[order(leaf_pos$x), ]
 
-leaf_pos$x_plot <- leaf_pos$x
-leaf_pos$y_plot <- 0
-leaf_pos$group <- as.factor(groups[leaf_pos$site])
+leaf_pos$x_plot = leaf_pos$x
+leaf_pos$y_plot = 0
+leaf_pos$group = as.factor(groups[leaf_pos$site])
 
 
 
 # Ordre initial des espèces (optionnel, uniquement pour cohérence des données)
 
-dist_sp <- vegdist(t(comm), method = "bray")
-hc_sp <- hclust(dist_sp, method = "average")
+dist_sp = vegdist(t(comm), method = "bray")
+hc_sp = hclust(dist_sp, method = "average")
 
-sp_order <- hc_sp$labels[hc_sp$order]
+sp_order = hc_sp$labels[hc_sp$order]
 
 
 
 # Ordre FIXE des espèces (manuel)
 
-sp_order_opt <- c(
+sp_order_opt = c(
   "Riella.helicophylla",
   "Tolypella.salina",
   "Chara.canescens",
@@ -100,7 +102,7 @@ sp_order_opt <- c(
   "Riella.notarisii"
 )
 
-sp_pos <- data.frame(
+sp_pos = data.frame(
   species = sp_order_opt,
   x_plot = seq(min(leaf_pos$x), max(leaf_pos$x), length.out = length(sp_order_opt)),
   y_plot = -2
@@ -110,7 +112,7 @@ sp_pos <- data.frame(
 
 # Réseau bipartite initial
 
-links <- as.data.frame(comm) %>%
+links = as.data.frame(comm) %>%
   mutate(site = rownames(comm)) %>%
   pivot_longer(-site, names_to = "species", values_to = "abundance") %>%
   filter(abundance > 0)
@@ -118,7 +120,7 @@ links <- as.data.frame(comm) %>%
 
 # Mise à jour des liens après optimisation
 
-links <- as.data.frame(comm) %>%
+links = as.data.frame(comm) %>%
   mutate(site = rownames(comm)) %>%
   pivot_longer(-site, names_to = "species", values_to = "abundance") %>%
   filter(abundance > 0) %>%
@@ -133,11 +135,12 @@ links <- as.data.frame(comm) %>%
 
 # PLOT FINAL
 
-p <- ggplot() +
+p = ggplot() +
   
   # dendrogramme
   geom_segment(data = dend$segments,
-               aes(x = x, y = y, xend = xend, yend = yend),
+               aes(x = x, y = y,
+                   xend = xend, yend = yend),
                linewidth = 1) +
   
   # liens bipartites
@@ -145,33 +148,60 @@ p <- ggplot() +
                aes(x = x_site, y = y_site,
                    xend = x_sp, yend = y_sp,
                    linewidth = abundance),
-               alpha = 0.5, color = "grey30") +
+               alpha = 0.5,
+               color = "grey40") +
   
-  # sites
+  # sites = formes au lieu des couleurs
   geom_point(data = leaf_pos,
-             aes(x = x_plot, y = y_plot, fill = group),
-             size = 3, shape = 21, color = "black") +
+             aes(x = x_plot,
+                 y = y_plot,
+                 shape = group),
+             size = 4,
+             stroke = 1.2,
+             color = "black") +
   
   # espèces
-  geom_point(data = sp_pos,
-             aes(x = x_plot, y = y_plot, color = species),
-             size = 5) +
+  geom_point(data = leaf_pos,
+             aes(x = x_plot,
+                 y = y_plot,
+                 shape = group,
+                 fill = group),
+             size = 4,
+             color = "black",
+             stroke = 0.8) +
   
   geom_text(data = sp_pos,
-            aes(x = x_plot, y = y_plot - 0.3, label = species),
+            aes(x = x_plot,
+                y = y_plot - 0.3,
+                label = species),
             size = 4) +
+  
+  scale_shape_manual(
+    values = c(21, 22, 24),
+    name = "Cluster"
+  ) +
+  scale_shape_manual(
+    values = c(21, 22, 24),
+    name = "Cluster"
+  ) +
+  scale_fill_manual(
+    values = c(
+      "grey20",
+      "grey50",
+      "grey80"
+    ),
+    name = "Cluster"
+  ) +
   
   scale_linewidth(range = c(0.2, 2.5)) +
   
-  scale_fill_brewer(palette = "Set1", name = "Groupes") +
-  scale_color_brewer(palette = "Dark2", name = "Espèces") +
-  
   labs(
-    title = "Clustering des relevés + réseau bipartite",
-    subtitle = paste("Méthode :", best_method,
-                     "| PERMANOVA p =",
-                     signif(adonis_res$`Pr(>F)`[1], 3)),
-    y = "Distance Bray-Curtis"
+    title = "Clustering of sampling sites and bipartite network",
+    subtitle = paste(
+      "Ward.D2 clustering | PERMANOVA p =",
+      signif(adonis_res$`Pr(>F)`[1], 3)
+    ),
+    y = "Bray–Curtis distance"
   ) +
   
   theme_minimal(base_size = 14) +
@@ -182,6 +212,84 @@ p <- ggplot() +
   )
 
 print(p)
+
+###Calcul de IndVal
+#Tester l'analyse IndVal de Dufrêne & Legendre (1997) : identifier les espèces indicatrices de chaque groupe du cluster. Chaque espèce à un score IdVal 0-1 pour chaque groupe 
+
+# ----------------------------
+# IndVal des clusters
+# ----------------------------
+set.seed(123)
+
+indval_res <- multipatt(
+  comm,
+  as.factor(groups),
+  func = "IndVal.g",
+  control = how(nperm = 999)
+)
+
+summary(indval_res)
+
+# ----------------------------
+# Tableau des espèces significatives
+# ----------------------------
+indval_tab <- data.frame(
+  espece = rownames(indval_res$sign),
+  indval_res$sign
+) %>%
+  filter(p.value <= 0.05) %>%
+  arrange(desc(stat))
+
+indval_tab
+
+#Tableau propre des resultats 
+indval_tab <- data.frame(
+  species = rownames(indval_res$sign),
+  indval_res$sign
+) %>%
+  mutate(
+    cluster = paste0(
+      ifelse(s.1 == 1, "1", ""),
+      ifelse(s.2 == 1, "+2", ""),
+      ifelse(s.3 == 1, "+3", "")
+    ),
+    cluster = gsub("^\\+", "", cluster),
+    cluster = paste("Cluster", cluster)
+  ) %>%
+  filter(p.value <= 0.05) %>%
+  arrange(desc(stat))
+
+indval_tab
+
+#Graph pour viusaliser 
+ggplot(indval_tab,
+       aes(x = reorder(species, stat),
+           y = stat,
+           fill = cluster)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    x = NULL,
+    y = "IndVal",
+    fill = "Cluster"
+  ) +
+  theme_minimal()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -253,8 +361,8 @@ pca_res$var$contrib
 
 
 #Identifier les outliers 
-coord_ind$dist_origin <- sqrt(coord_ind$Dim.1^2 + coord_ind$Dim.2^2)
-outliers_top10 <- coord_ind %>%
+coord_ind$dist_origin = sqrt(coord_ind$Dim.1^2 + coord_ind$Dim.2^2)
+outliers_top10 = coord_ind %>%
   arrange(desc(dist_origin)) %>%
   slice(1:10)
 
@@ -310,8 +418,10 @@ p = ggplot(df_n_sp, aes(x = n_sp_2020, y = n_sp_2025, color = Site)) +
   geom_text(data = summary_df,
             aes(x = mean_2020, y = mean_2025, label = Site),
             color = "black", fontface = "bold", size = 5, inherit.aes = FALSE) +
-  scale_x_continuous(limits = c(0, 5), breaks = 0:5, expand = c(0, 0)) +
-  scale_y_continuous(limits = c(0, 5), breaks = 0:5, expand = c(0, 0)) +
+  scale_x_continuous(breaks = 0:5, expand = c(0, 0)) +
+  scale_y_continuous(breaks = 0:5, expand = c(0, 0)) +
+  
+  coord_cartesian(xlim = c(0, 5), ylim = c(0, 5)) +
   
   labs(
     x = "2020",
@@ -330,7 +440,9 @@ p = ggplot(df_n_sp, aes(x = n_sp_2020, y = n_sp_2025, color = Site)) +
     plot.margin = margin(t = 10, r = 15, b = 10, l = 15)
   )
 
-ggsave("Ib_speciesrichness.svg", plot = p, device = "svg")
+print(p)
+
+ggsave("Ib_speciesrichness.svg", plot = p, width = 10, height = 10)
 
 
 
@@ -377,6 +489,7 @@ X_scaled = scale(X_clean)
 rda_result = rda(Y_hell ~ ., data = as.data.frame(X_scaled))
 
 summary(rda_result)
+RsquareAdj(rda_result)
 
 #Tester la significativite de la RDA ? 
 anova(rda_result)                      # Test global
@@ -397,9 +510,9 @@ df_species$Species = rownames(df_species)
 df_env$Var = rownames(df_env)
 
 # --- Extraire % variance expliquée ---
-eig_vals <- summary(rda_result)$concont$importance["Proportion Explained", 1:2] * 100
-expl_var1 <- round(eig_vals[1], 1)
-expl_var2 <- round(eig_vals[2], 1)
+eig_vals = summary(rda_result)$concont$importance["Proportion Explained", 1:2] * 100
+expl_var1 = round(eig_vals[1], 1)
+expl_var2 = round(eig_vals[2], 1)
 
 # --- Graphique RDA ---
 graph1 = ggplot() +
@@ -460,7 +573,7 @@ graph1 = ggplot() +
 
 print(graph1)
 
-ggsave("Images/test.svg", plot=graph1, width=10, height=8)
+#ggsave("RDA.svg", plot=graph1, width=15, height=8)
 
 #### Influence des variables environnementales ----
 species_scores = scores(rda_result, display = "species", scaling = 2)
@@ -475,20 +588,20 @@ cor_matrix = matrix(NA, nrow = nrow(species_scores), ncol = nrow(env_scores),
 
 for (i in 1:nrow(species_scores)) {
   for (j in 1:nrow(env_scores)) {
-    cor_matrix[i, j] <- cosine_similarity(species_scores[i, 1:2], env_scores[j, 1:2])
+    cor_matrix[i, j] = cosine_similarity(species_scores[i, 1:2], env_scores[j, 1:2])
   }
 }
 round(cor_matrix, 2)
 
 apply(cor_matrix, 1, function(x) {
-  var_max <- names(which.max(abs(x)))
-  value <- x[var_max]
+  var_max = names(which.max(abs(x)))
+  value = x[var_max]
   c(Var = var_max, Correlation = round(value, 2))
 })
 
 
 cor_matrix_clean = cor_matrix[!apply(cor_matrix, 1, function(x) any(is.na(x))), ]
-pheatmap(
+graph2 = pheatmap(
   cor_matrix_clean,
   cluster_rows = TRUE,
   cluster_cols = TRUE,
@@ -497,4 +610,87 @@ pheatmap(
   fontsize_number = 12, 
   number_color = "black"
 )
+
+ggsave("Heatmap.svg", plot=graph2, width=15, height=8)
+
+
+
+
+
+
+
+
+#III - Ecological Drivers of key species change 
+
+#GLMM en 2 étapes ("hurdle") : GLMM binomial puis GLMM beta (sans les zéros) 
+
+library(glmmTMB)
+library(dplyr)
+
+species = c("Althenia.filiformis",
+             "Lamprothamnium.papulosum",
+             "Ruppia.maritima")
+
+env_vars = colnames(df_merged)[13:21]
+
+# standardisation
+df_merged[env_vars] = scale(df_merged[env_vars])
+
+models_pa  = list()
+models_abd = list()
+
+for (sp in species) {
+  
+  y = df_merged[[sp]]
+  
+#GLMM présence/absence
+  df_merged[[paste0(sp, "_pa")]] = ifelse(y > 0, 1, 0)
+  
+  formula_pa = as.formula(
+    paste0(sp, "_pa ~ ",
+           paste(env_vars, collapse = " + "),
+           " + Year + (1|Site)")
+  )
+  
+  models_pa[[sp]] = glmmTMB(
+    formula_pa,
+    family = binomial(),
+    data = df_merged
+  )
+  
+#GLMM beta 
+  
+  env_vars_sel = c("organic_matter",
+                    "water_level",
+                    "salinity",
+                    "ilr_clay_vs_silt")  
+  
+  df_pos = df_merged %>% filter(.data[[sp]] > 0)
+  
+  y_pos = df_pos[[sp]]
+  
+  # transformation pour éviter 1
+  n = length(y_pos)
+  y_beta = (y_pos * (n - 1) + 0.5) / n
+  
+  df_pos[[paste0(sp, "_beta")]] = y_beta
+  
+  formula_abd = as.formula(
+    paste0(sp, "_beta ~ ",
+           paste(env_vars_sel, collapse = " + "),
+           " + Year + Site")
+  )
+  
+  models_abd[[sp]] = glmmTMB(
+    formula_abd,
+    family = beta_family(link = "logit"),
+    data = df_pos
+  )
+}
+# Résultats
+lapply(models_pa, summary)
+lapply(models_abd, summary)
+
+
+
 

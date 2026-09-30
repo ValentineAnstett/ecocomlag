@@ -4,11 +4,13 @@ setwd("/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Pro
 Macro_Ptscontacts= read.csv("Macro_Ptscontacts.csv", header = TRUE, sep = ",", dec=".")
 
 Macro_Ptscontacts = Macro_Ptscontacts %>%
-  filter(!(ID_LAG %in% c("PAL_VIL_07", "PAL_VIL_06","ORB_MAI_04","ORB_MAI_05"))) #Outliers
+  filter(!(ID_LAG %in% c("G_07", "G_06","D_04","D_05")))
+Macro_Ptscontacts = Macro_Ptscontacts[, colSums(Macro_Ptscontacts != 0, na.rm = TRUE) > 0]
+
 
 couleurs_Year = c("2020" = "#F8766D",  # rouge clair
                    "2025" = "#00BFC4") 
-Macro_Ptscontacts_sanstot = Macro_Ptscontacts [, -19]
+Macro_Ptscontacts_sanstot = Macro_Ptscontacts [, -14]
 
 ### Permanova sur 2020-2025 ----
 
@@ -28,7 +30,7 @@ print(permanova_macro_global_result)
 permanova_macro_details_result = adonis2(dist_mat ~ Year + Site + ID_LAG, data = data_clean, by = "terms", permutations = 999)
 print(permanova_macro_details_result)
 
-permanova_macro_site_result = adonis2(dist_mat ~ Site, data = data_clean, by = "terms", permutations = 999)
+permanova_macro_site_result = adonis2(dist_mat ~ Year + Site, data = data_clean, by = "terms", permutations = 999)
 print(permanova_macro_site_result)
 
 permanova_macro_lag_result = adonis2(dist_mat ~ ID_LAG, data = data_clean, by = "terms", permutations = 999)
@@ -129,9 +131,9 @@ print(significatives)
 
 #Representation graphique 
 especes_signif = c("Ruppia.maritima", "Althenia.filiformis", 
-                    "Lamprothamnium.papulosum", "Riella.helicophylla")
+                    "Lamprothamnium.papulosum")
 
-df_plot = df_sub[, c("Year", especes_signif)]
+
 
 df_long = pivot_longer(df_plot,
                         cols = all_of(especes_signif),
@@ -170,6 +172,219 @@ ggplot(df_long, aes(x = Espece, y = Abondance, fill = as.factor(Year))) +
     plot.title = element_text(size = 18, face = "bold", hjust = 0.5)
   ) +
   scale_fill_manual(values = c("2020" = "#F8766D", "2025" = "#00BFC4"))
+
+#test Wilcoxon signed-rank test apparié 
+
+# Années à comparer
+Years_a_comparer <- c(2020, 2025)
+
+# Sélection des années
+df_sub <- subset(Macro_Ptscontacts_sanstot, Year %in% Years_a_comparer)
+
+# Colonnes des espèces
+especes_cols <- names(df_sub)[4:ncol(df_sub)]
+
+# Tableau résultats
+resultats <- data.frame(
+  Espece = especes_cols,
+  W_statistic = NA,
+  p_value = NA
+)
+
+
+# ============================================================
+# Boucle sur chaque espèce
+# ============================================================
+
+for (i in seq_along(especes_cols)) {
+  
+  espece <- especes_cols[i]
+  
+  # Passage en format large :
+  # une ligne = un point de contact
+  # une colonne = une année
+  
+  df_wide <- reshape(
+    df_sub[, c("ID_LAG", "Year", espece)],
+    timevar = "Year",
+    idvar = "ID_LAG",
+    direction = "wide"
+  )
+  
+  # Noms des colonnes
+  col_2020 <- paste0(espece, ".2020")
+  col_2025 <- paste0(espece, ".2025")
+  
+  # Garder uniquement les sites présents les deux années
+  df_test <- df_wide[
+    complete.cases(df_wide[, c(col_2020, col_2025)]),
+  ]
+  
+  # Test uniquement si assez de données
+  if(nrow(df_test) > 1){
+    
+    test <- wilcox.test(
+      df_test[[col_2020]],
+      df_test[[col_2025]],
+      paired = TRUE,
+      exact = FALSE
+    )
+    
+    resultats$W_statistic[i] <- test$statistic
+    resultats$p_value[i] <- test$p.value
+  }
+}
+
+
+
+resultats = resultats[order(resultats$p_value), ]
+
+significatives = subset(resultats, p_value < 0.05)
+
+print(significatives)
+
+# ============================================================
+# Préparation des données pour ggplot
+# ============================================================
+
+# Espèces à représenter
+especes_signif <- c(
+  "Ruppia.maritima",
+  "Althenia.filiformis",
+  "Lamprothamnium.papulosum"
+)
+
+
+# Passage en format long
+df_long <- df_sub %>%
+  dplyr::select(ID_LAG, Year, all_of(especes_signif)) %>%
+  pivot_longer(
+    cols = all_of(especes_signif),
+    names_to = "Espece",
+    values_to = "Abondance"
+  )
+
+
+# Position des annotations
+y_pos <- df_long %>%
+  group_by(Espece) %>%
+  summarise(
+    y = max(Abondance, na.rm = TRUE) * 1.1
+  )
+
+
+annot <- significatives %>%
+  filter(Espece %in% especes_signif) %>%
+  left_join(y_pos, by = "Espece")
+
+
+# Fonction étoiles
+sig_stars <- function(p){
+  if(p < 0.001) return("***")
+  if(p < 0.01) return("**")
+  if(p < 0.05) return("*")
+  return("ns")
+}
+
+
+annot <- annot %>%
+  mutate(
+    star = sapply(p_value, sig_stars),
+    p_label = paste0(
+      "p = ",
+      signif(p_value, 3),
+      " ",
+      star
+    )
+  )
+
+
+# ============================================================
+# Graphique
+# ============================================================
+
+ggplot(
+  df_long,
+  aes(
+    x = Espece,
+    y = Abondance,
+    fill = factor(Year)
+  )
+) +
+  
+  geom_boxplot(
+    position = position_dodge(0.8),
+    alpha = 0.5
+  ) +
+  
+  geom_text(
+    data = annot,
+    aes(
+      x = Espece,
+      y = y,
+      label = p_label
+    ),
+    inherit.aes = FALSE,
+    size = 5
+  ) +
+  
+  labs(
+    title = "Temporal changes in species abundance (2020 vs 2025)",
+    x = "Species",
+    y = "Abundance",
+    fill = "Year"
+  ) +
+  
+  theme_minimal(base_size = 15) +
+  
+  theme(
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    ),
+    plot.title = element_text(
+      face = "bold",
+      hjust = 0.5
+    )
+  ) +
+  
+  scale_fill_manual(
+    values = c(
+      "2020" = "#F8766D",
+      "2025" = "#00BFC4"
+    )
+  )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 ###TBI----
