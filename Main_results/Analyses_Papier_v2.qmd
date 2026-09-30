@@ -1100,7 +1100,7 @@ p_niche_uni
 #ggsave("niche_realisee_univariee.svg", plot = p_niche_uni, width = 14, height = 9, units = "in")
 ```
 
-### b-bis)  GAMM + selection avec "shrinkage" – ce qu'il y adéjà dans le papier (graph modifié) 
+### b-bis) GAMM + selection avec "shrinkage" – ce qu'il y adéjà dans le papier (graph modifié)
 
 ```{r gam-check-response}
 #| label: gam-verif-reponse
