@@ -1,0 +1,1105 @@
+---
+title: "Article_1"
+format: pdf
+editor: visual
+execute:
+  warning: false
+  message: false
+---
+
+```{r setup}
+#| label: setup
+
+# ------------------------------------------------------------------
+# Packages
+# ------------------------------------------------------------------
+library(vegan)
+library(ggplot2)
+library(ggdendro)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(adespatial)
+library(indicspecies)
+library(FactoMineR)
+library(ggrepel)
+library(mgcv)
+library(patchwork)
+library(pheatmap)
+library(here)        # chemins relatifs -> reproductible sur n'importe quelle machine
+library(permute)     
+library(corrplot)
+library(lme4)       
+
+# ------------------------------------------------------------------
+# Graine unique pour TOUT le document (clustering, permutations, sélection...)
+# ------------------------------------------------------------------
+set.seed(123)
+
+# ------------------------------------------------------------------
+# Chemin relatif vers les données
+# ------------------------------------------------------------------
+data_path <- here("df_merged_final.csv")
+
+# ------------------------------------------------------------------
+# Lagunes exclues (cortège lagunes permanentes / mares)
+# ------------------------------------------------------------------
+outlier_lagoons <- c("G_07", "G_06", "D_04", "D_05")
+
+meta_cols   <- c("Year", "Site", "ID_LAG")
+non_species <- c("algues")  # à supprimer
+
+# Variables environnementales utilisées dans les analyses (RDA, GAM, TBI-LM...)
+env_vars <- c("organic_matter", "ilr_fines_vs_sand", "ilr_clay_vs_silt",
+              "water_level", "Surface", "dist_trait_cote_m", "salinity",
+              "mise_en_eau_num", "duree_assec")
+```
+
+Le chunk suivant charge le tableau de données, retire les lagunes identifiées comme des mares/lagunes permanentes (`outlier_lagoons`), recode les absences d'espèces (`NA`) en zéros, retire les espèces jamais observées après filtrage, et construit trois sous-tableaux utilisés dans le reste du document (`macro` : espèces ; `envir` : variables environnementales ; `df_merged_final` : les deux combinés).
+
+```{r data-loading}
+#| label: chargement-des-donnees
+
+df_all <- read_csv(data_path, show_col_types = FALSE) %>%
+  filter(!(ID_LAG %in% outlier_lagoons))
+
+# Colonnes d'espèces identifiées par noms plutôt que par position
+species_cols <- setdiff(colnames(df_all), c(meta_cols, env_vars, non_species))
+
+# Absences codées NA -> 0, uniquement pour les colonnes d'espèces
+df_all <- df_all %>% mutate(across(all_of(species_cols), ~replace_na(.x, 0)))
+
+# Retrait des espèces jamais observées après exclusion des lagunes outliers
+species_cols <- species_cols[colSums(df_all[, species_cols] != 0, na.rm = TRUE) > 0]
+
+# Trois sous-tableaux utilisés dans le reste du document :
+macro <- df_all %>% dplyr::select(all_of(meta_cols), all_of(species_cols))
+envir <- df_all %>% dplyr::select(all_of(meta_cols), all_of(env_vars))
+df_merged_final <- df_all %>%
+  dplyr::select(all_of(meta_cols), all_of(species_cols), all_of(env_vars))
+
+cat("Sites :", nrow(macro), "| Espèces retenues :", length(species_cols), "\n")
+```
+
+## Article 1
+
+### 1) Plant community Structure and Dynamics
+
+#### a) Clustering + matrice de confusion + IndVa - Composition
+
+On réalise un clustering hiérarchique **sur l'ensemble des relevés 2020 et 2025 combinés** (chaque ligne = une lagune à une date donnée, sans fusionner les deux années). La méthode d'agrégation est choisie automatiquement en comparant la corrélation cophénétique de trois méthodes usuelles. Les groupes sont définis par le clustering lui-même.
+
+```{r cluster}
+#| label: clustering
+
+#| label: clustering
+
+comm_all <- macro %>%
+  dplyr::select(all_of(species_cols))
+# Table "jumelle" de comm_all : ID_LAG et Year, dans le MEME ordre de lignes
+comm_meta_all <- macro %>% dplyr::select(ID_LAG, Year)
+
+# ID_LAG seul n'est pas unique : identifiant "ID_LAG_Année" pour chaque relevé
+rownames(comm_all) <- paste(macro$ID_LAG, macro$Year, sep = "_")
+colnames(comm_all) <- gsub(" ", ".", colnames(comm_all))   # noms de colonnes utilisables comme noms R
+
+# Relevés sans aucune végétation (recouvrement total = 0 sur toutes les
+# espèces) : la distance de Bray-Curtis n'est pas définie entre deux
+# relevés vides (0/0) -> on les retire du clustering proprement dit, mais
+# on les garde de côté (comm_zero) pour leur assigner ensuite un groupe
+# commun "0 : sans végétation" plutôt que de les faire disparaître
+# silencieusement de la matrice de confusion.
+keep_rows <- rowSums(comm_all) > 0
+
+comm      <- comm_all[keep_rows, ]         # relevés végétalisés -> utilisés pour le clustering
+comm_meta <- comm_meta_all[keep_rows, ]
+
+comm_zero      <- comm_all[!keep_rows, ]   # relevés sans végétation, mis de côté
+comm_meta_zero <- comm_meta_all[!keep_rows, ]
+
+cat("Relevés sans végétation (groupe commun, hors clustering) :",
+    nrow(comm_zero), "/", nrow(comm_all), "\n")
+
+dist_bray <- vegdist(comm, method = "bray")        # matrice de distance sur les relevés végétalisés uniquement
+
+# Choix de la méthode de clustering par corrélation cophénétique
+methods_hc <- c("complete", "average", "ward.D2")
+coph <- sapply(methods_hc, function(m) {
+  hc <- hclust(dist_bray, method = m)
+  cor(dist_bray, cophenetic(hc))                    # corrélation distance <-> arbre
+})
+best_method <- methods_hc[which.max(coph)]           # on garde la méthode la plus fidèle
+hc <- hclust(dist_bray, method = best_method)
+
+cat("Méthode retenue :", best_method, "\n")
+cat("Corrélation cophénétique :", round(max(coph), 3), "\n")
+
+k <- 3
+groups <- cutree(hc, k = k)   # groupes 1..k, un par relevé végétalisé (comm/comm_meta)
+table(groups)
+
+# Table complète des groupes, TOUS relevés confondus : 1..k = clusters de
+# végétation (issus du clustering), 0 = relevés sans végétation (groupe
+# commun, non issu du clustering). On combine par POSITION (comm_meta et
+# 'groups' sont déjà alignés ligne à ligne ; comm_meta_zero reçoit
+# simplement la constante 0), pour éviter tout souci de correspondance
+# de noms/rownames.
+groupes_df <- bind_rows(
+  comm_meta %>% mutate(groupe = as.integer(groups)),
+  comm_meta_zero %>% mutate(groupe = 0L)
+)
+table(groupes_df$groupe)
+```
+
+Cette figure représente le dendrogramme des relevés avec, en dessous, un réseau bipartite reliant chaque relevé aux espèces qu'il contient (épaisseur du trait = abondance).
+
+```{r fig-dendro-bipartite}
+#| label: fig-dendro-bipartite
+#| fig-cap: "Clustering des sites et réseau bipartite espèces-sites"
+
+# Ordre manuel des espèces (affichage uniquement)
+sp_order_opt <- c(
+  "Riella.notarisii",
+  "Tolypella.salina",
+  "Tolypella.hispanica",
+  "Riella.helicophylla",
+  "Ruppia.maritima",
+  "Lamprothamnium.papulosum",
+  "Althenia.filiformis",
+  "Ruppia.cirrhosa",
+  "Chara.canescens"
+)
+
+stopifnot(setequal(colnames(comm), sp_order_opt))
+comm <- comm[, sp_order_opt]
+
+# Positions des feuilles du dendrogramme
+dend <- dendro_data(hc)
+
+leaf_pos <- dend$labels %>%
+  mutate(
+    site = label,
+    x_plot = x,
+    y_plot = 0,
+    group = as.factor(groups[label])
+  ) %>%
+  arrange(x)
+
+# Positions des espèces (dans l'ordre manuel défini ci-dessus)
+sp_pos <- data.frame(
+  species = colnames(comm),
+  x_plot = seq(min(leaf_pos$x_plot),
+               max(leaf_pos$x_plot),
+               length.out = ncol(comm)),
+  y_plot = -2
+)
+
+# Liens sites-espèces (une ligne par couple site x espèce présent)
+links <- as.data.frame(comm) %>%
+  mutate(site = rownames(comm)) %>%
+  pivot_longer(-site, names_to = "species", values_to = "abundance") %>%
+  filter(abundance > 0) %>%
+  left_join(leaf_pos, by = "site") %>%
+  rename(x_site = x_plot, y_site = y_plot) %>%
+  left_join(sp_pos, by = "species") %>%
+  rename(x_sp = x_plot, y_sp = y_plot)
+
+# Construction du graphique 
+p_dendro <- ggplot() +
+  geom_segment(data = dend$segments, aes(x, y, xend = xend, yend = yend)) +
+  geom_segment(
+    data = links,
+    aes(x = x_site, y = y_site, xend = x_sp, yend = y_sp, linewidth = abundance),
+    alpha = 0.4, color = "grey40"
+  ) +
+  geom_point(
+    data = leaf_pos,
+    aes(x_plot, y_plot, shape = group, fill = group),
+    size = 5, color = "black", stroke = 0.9
+  ) +
+  geom_text(
+    data = sp_pos,
+    aes(x_plot, y_plot - 0.3, label = species),
+    size = 3.5
+  ) +
+  scale_shape_manual(values = c(21, 22, 24), name = "Cluster") +
+  scale_fill_manual(values = c("#009E73", "#E69F00", "#0072B2"), name = "Cluster") +
+  scale_linewidth(range = c(0.2, 2.5)) +
+  labs( y = "Bray-Curtis distance"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text = element_blank(),
+    axis.title.x = element_blank(),
+    panel.grid = element_blank()
+  )
+
+p_dendro
+
+ggsave("figure_cluster_color_Finale.svg", plot = p_dendro, width = 18, height = 10, units = "in")
+```
+
+::: callout-note
+**Matrice de confusion : dynamique des groupes entre 2020 et 2025**
+:::
+
+```{r confusion-matrix-groupes}
+#| label: confusion-matrix-groupes
+#| tbl-cap: "Matrice de confusion : changement de groupe de composition entre 2020 et 2025 (0 = sans végétation)"
+
+# groupes_df (construit dans le chunk 'clustering') contient déjà TOUS les
+# relevés, y compris ceux sans végétation (groupe = 0)
+groupes_wide <- groupes_df %>%
+  filter(Year %in% c(2020, 2025)) %>%
+  pivot_wider(id_cols = ID_LAG, names_from = Year, values_from = groupe,
+              names_prefix = "groupe_") %>%
+  drop_na()   # on ne garde que les lagunes présentes aux DEUX dates
+
+# Matrice de confusion : lignes = groupe en 2020, colonnes = groupe en 2025
+# Niveaux forcés à 0:k pour que TOUS les groupes apparaissent, y compris à 0 occurrence
+niveaux_groupes <- 0:k
+conf_mat <- table(
+  Groupe_2020 = factor(groupes_wide$groupe_2020, levels = niveaux_groupes),
+  Groupe_2025 = factor(groupes_wide$groupe_2025, levels = niveaux_groupes)
+)
+conf_mat
+
+cat("Lagunes ayant changé de groupe :",
+    sum(groupes_wide$groupe_2020 != groupes_wide$groupe_2025), "/", nrow(groupes_wide), "\n")
+```
+
+On caractérise ensuite chaque groupe par ses espèces indicatrices (méthode IndVal de Dufrêne & Legendre, via `multipatt`). Cette étape reste descriptive et ne dépend pas de la question de significativité soulevée ci-dessus.
+
+```{r indval}
+#| label: indval
+
+# Espèces indicatrices de chaque cluster (Dufrêne & Legendre 1997)
+indval_res <- multipatt(comm, as.factor(groups), func = "IndVal.g",
+                         control = how(nperm = 999))
+
+indval_tab <- data.frame(species = rownames(indval_res$sign), indval_res$sign) %>%
+  filter(p.value <= 0.05) %>%
+  arrange(desc(stat))
+indval_tab
+
+ggplot(indval_tab, aes(x = reorder(species, stat), y = stat)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(x = NULL, y = "IndVal") +
+  theme_minimal()
+```
+
+#### b)PERMANOVA appariée - Composition globale : effet Site et Année
+
+***Point à valider/discuter*** : Chaque lagune (`ID_LAG`) est ré-échantillonnée aux deux dates : les relevés ne sont donc pas indépendants (mesures répétées / appariées), ce qui viole l'hypothèse d'échangeabilité libre des permutations d'un `adonis2` classique. On construit ici deux schémas de permutation contraints avec `permute::how()` :
+
+-   pour l'effet **Année** (facteur "intra-sujet", apparié) : les permutations sont autorisées **uniquement à l'intérieur de chaque lagune** (entre ses deux dates), jamais entre lagunes ;
+-   pour l'effet **Site** (facteur "inter-sujet") : à l'inverse, on permute des **blocs entiers de lagune** (les deux dates d'une même lagune restent ensemble), jamais à l'intérieur d'un bloc.
+-   
+
+```{r permanova-site-year}
+#| label: permanova-site-annee
+
+meta <- macro %>% dplyr::select(all_of(meta_cols)) %>%
+  mutate(Site = as.factor(Site), Year = as.factor(Year))
+data_num <- macro %>% dplyr::select(all_of(species_cols))
+
+keep <- rowSums(data_num) > 0
+data_num_clean <- data_num[keep, ]
+meta_clean <- meta[keep, ]
+stopifnot(nrow(data_num_clean) == nrow(meta_clean))
+
+dist_bc <- vegdist(data_num_clean, method = "bray")
+
+# Vérification de dispersion AVANT interprétation de la PERMANOVA
+anova(betadisper(dist_bc, meta_clean$Site))
+anova(betadisper(dist_bc, meta_clean$Year))
+
+# --- Effet Année (apparié) : permutations restreintes A L'INTERIEUR de chaque lagune ---
+perm_year <- how(
+  within = Within(type = "free"),                             # permute librement...
+  plots  = Plots(strata = meta_clean$ID_LAG, type = "none"),   # ...mais jamais entre lagunes
+  nperm  = 999
+)
+cat("--- Effet Année (permutations intra-lagune) ---\n")
+adonis2(dist_bc ~ Year, data = meta_clean, permutations = perm_year, by = "margin")
+
+# --- Effet Site (inter-lagune) : permutations restreintes ENTRE lagunes ---
+perm_site <- how(
+  within = Within(type = "none"),                              # jamais de permutation intra-lagune...
+  plots  = Plots(strata = meta_clean$ID_LAG, type = "free"),    # ...seulement entre blocs "lagune"
+  nperm  = 999
+)
+cat("--- Effet Site (permutations inter-lagune) ---\n")
+adonis2(dist_bc ~ Site, data = meta_clean, permutations = perm_site, by = "margin")
+```
+
+#### c)RDA contrainte - Facteurs écologiques de la composition 
+
+L'objectif est de caractériser le lien végétation-environnement en utilisant **tous** les relevés disponibles (2020 et 2025). Comme chaque lagune est re-échantillonnée (pseudo-réplication temporelle) et que le Site structure fortement la composition, on :
+
+1.  retire l'effet Site en le mettant en `Condition()` dans la RDA (RDA partielle) ;
+2.  contraint les permutations du test à se faire **à l'intérieur de chaque lagune** (`blocks = ID_LAG`), pour ne comparer les changements d'environnement et de composition qu'au sein d'une même lagune entre les deux dates.
+
+(On conserve `ID_LAG` et `Site` en plus des variables numériques, pour pouvoir construire ensuite le terme `Condition(Site)` et le schéma de permutation par blocs.)
+
+```{r rda-checks}
+#| label: rda-verifications
+
+Y <- df_merged_final %>% dplyr::select(all_of(species_cols))
+
+# On garde ID_LAG et Site en plus des variables numériques (utiles plus bas)
+X_full <- df_merged_final %>% dplyr::select(ID_LAG, Site, organic_matter, ilr_fines_vs_sand,
+                                             ilr_clay_vs_silt, water_level, Surface,
+                                             dist_trait_cote_m, salinity,
+                                             mise_en_eau_num, duree_assec)
+X <- X_full %>% dplyr::select(-ID_LAG, -Site)   # variables numériques seules (corrélations/VIF/RDA)
+
+complete_rows <- complete.cases(Y, X_full)
+Y_clean <- Y[complete_rows, ]
+X_clean <- X[complete_rows, ]
+id_clean   <- X_full$ID_LAG[complete_rows]   # conservé pour les permutations contraintes
+site_clean <- X_full$Site[complete_rows]     # conservé pour le terme Condition(Site)
+
+# decorana() exige rowSums > 0 : on retire les lignes site-année sans
+# aucune espèce présente
+zero_rows <- rowSums(Y_clean) == 0
+if (any(zero_rows)) {
+  cat("Sites retirés (aucune espèce présente cette année-là) :", sum(zero_rows), "\n")
+}
+Y_clean    <- Y_clean[!zero_rows, ]
+X_clean    <- X_clean[!zero_rows, ]
+id_clean   <- id_clean[!zero_rows]
+site_clean <- site_clean[!zero_rows]
+
+# 1. Corrélation par paires (vérification rapide, bivariée)
+cor_mat <- cor(X_clean, use = "complete.obs")
+print(round(cor_mat, 2))
+high_cor <- which(abs(cor_mat) > 0.7 & cor_mat != 1, arr.ind = TRUE)
+if (nrow(high_cor) > 0) {
+  cat("Paires corrélées (|r| > 0.7) à surveiller :\n")
+  print(unique(t(apply(high_cor, 1, sort))))
+}
+
+# VIF
+vif_manuel <- sapply(colnames(X_clean), function(v) {
+  fit <- lm(as.formula(paste(v, "~ .")), data = X_clean)
+  1 / (1 - summary(fit)$r.squared)
+})
+print(round(vif_manuel, 2))
+
+# Heatmap des corrélations
+{
+  corrplot(cor_mat, type = "lower", diag = FALSE, tl.pos = "n",
+           addCoef.col = "black", number.cex = 0.7,
+           col = colorRampPalette(c("#2166AC", "white", "#B2182B"))(200),
+           mar = c(0, 0, 3, 0))
+
+  n_v <- ncol(cor_mat)
+  text(x = 1:n_v, y = n_v - (1:n_v) + 1, labels = colnames(cor_mat),
+       pos = 4, cex = 0.75, xpd = TRUE, offset = 0.3)
+}
+
+# 2. Longueur de gradient (DCA) pour choisir RDA vs CCA
+Y_hell <- decostand(Y_clean, method = "hellinger")
+dca_check <- decorana(Y_hell)
+cat("Longueur du 1er axe DCA (SD) :", round(max(dca_check$rproj[, 1]) -
+                                              min(dca_check$rproj[, 1]), 2), "\n")
+```
+
+```{r rda-model}
+#| label: rda-modele
+
+X_scaled <- scale(X_clean)
+rda_data <- as.data.frame(X_scaled)
+rda_data$Site <- site_clean    # ajouté pour servir de covariable (Condition)
+
+# RDA partielle : Site en Condition() -> son effet est retiré avant de
+# tester les variables environnementales d'intérêt
+rda_result <- rda(Y_hell ~ organic_matter + ilr_fines_vs_sand + ilr_clay_vs_silt +
+                     water_level + Surface + dist_trait_cote_m + salinity +
+                     mise_en_eau_num + duree_assec + Condition(Site),
+                   data = rda_data)
+
+# Permutations contraintes : on ne permute qu'à l'intérieur de chaque lagune
+# (bloc = ID_LAG) pour respecter la pseudo-réplication temporelle
+perm_rda <- how(blocks = id_clean, nperm = 999)
+
+anova(rda_result, permutations = perm_rda)                 # test global
+anova(rda_result, by = "axis", permutations = perm_rda)
+anova(rda_result, by = "term", permutations = perm_rda)
+
+vif.cca(rda_result)               # colinéarité résiduelle dans le modèle ajusté
+```
+
+```{r rda-plot}
+#| label: fig-rda
+#| fig-cap: "RDA (partielle, Condition = Site) espèces ~ environnement"
+
+sc_site <- as.data.frame(scores(rda_result, display = "sites", scaling = 2))
+sc_sp   <- as.data.frame(scores(rda_result, display = "species", scaling = 2))
+sc_env  <- as.data.frame(scores(rda_result, display = "bp", scaling = 2))
+sc_sp$Species <- rownames(sc_sp)
+
+vars_env_labels <- c(
+  salinity = "Salinity", organic_matter = "Organic matter",
+  ilr_fines_vs_sand = "Fines/Sand ratio", ilr_clay_vs_silt = "Clay/Silt ratio",
+  water_level = "Water level (cm)", Surface = "Surface (m2)",
+  dist_trait_cote_m = "Distance to coastline (m)", mise_en_eau_num = "Reflooding date (j)",
+  duree_assec = "Dry period duration (j)"
+)
+sc_env$Var <- vars_env_labels[rownames(sc_env)]
+
+eig_pct <- summary(rda_result)$concont$importance["Proportion Explained", 1:2] * 100
+
+p_rda <- ggplot() +
+  geom_point(data = sc_site, aes(RDA1, RDA2), colour = "grey70", size = 1.5) +
+  geom_segment(data = sc_sp, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
+               arrow = arrow(length = unit(0.25, "cm")), colour = "#009E73") +
+  geom_text_repel(data = sc_sp, aes(RDA1, RDA2, label = Species), colour = "#009E73",
+                   size = 6.3, fontface = "bold") +          # flèches espèces : texte grossi
+  geom_segment(data = sc_env, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
+               arrow = arrow(length = unit(0.25, "cm")), colour = "#E69F00") +
+  geom_text_repel(data = sc_env, aes(RDA1, RDA2, label = Var), colour = "#E69F00",
+                   size = 6.3, fontface = "bold") +           # flèches environnement : texte grossi
+  geom_hline(yintercept = 0) + geom_vline(xintercept = 0) +
+  xlab(paste0("RDA1 (", round(eig_pct[1], 1), "%)")) +
+  ylab(paste0("RDA2 (", round(eig_pct[2], 1), "%)")) +
+  theme_minimal(base_size = 18) +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA),
+    axis.title   = element_text(size = 18, face = "bold"),   # titres d'axe (RDA1/RDA2) grossis
+    axis.text    = element_text(size = 18, face = "bold")    # numéros d'axe grossis
+  )
+
+p_rda
+
+# Ratio 16:9 (format écran) pour l'export SVG
+ggsave("figure_rda_colorblind.svg", plot = p_rda, width = 16, height = 9, units = "in")
+```
+
+::: callout-note
+Corrélation de rang (Spearman) plutôt que Pearson : plus robuste ici, car les données de recouvrement sont zéro-inflatées et les relations écologiques espèce-environnement sont rarement parfaitement linéaires (souvent en optimum/cloche). On utilise les valeurs brutes (`Y_clean`, pas `Y_hell`) pour que la corrélation d'une espèce donnée reste propre à cette espèce, indépendamment des autres.
+:::
+
+```{r rda-heatmap}
+#| label: fig-rda-heatmap
+#| fig-cap: "Corrélation de Spearman espèces / variables environnementales (* p<.05, ** p<.01, *** p<.001)"
+
+species_names <- colnames(Y_clean)
+env_names     <- colnames(X_clean)
+
+r_mat <- matrix(NA_real_, nrow = length(species_names), ncol = length(env_names),
+                 dimnames = list(species_names, env_names))
+p_mat <- r_mat
+
+for (sp in species_names) {
+  for (ev in env_names) {
+    test <- suppressWarnings(cor.test(Y_clean[[sp]], X_clean[[ev]], method = "spearman"))
+    r_mat[sp, ev] <- test$estimate
+    p_mat[sp, ev] <- test$p.value
+  }
+}
+
+stars <- ifelse(p_mat < 0.001, "***",
+          ifelse(p_mat < 0.01,  "**",
+           ifelse(p_mat < 0.05,  "*", "")))
+labels_mat <- matrix(paste0(round(r_mat, 2), stars), nrow = nrow(r_mat),
+                      dimnames = dimnames(r_mat))
+
+pheatmap(r_mat, cluster_rows = TRUE, cluster_cols = TRUE,
+         display_numbers = labels_mat, fontsize_number = 8, fontsize = 10)
+
+heatmap_colors <- colorRampPalette(rev(RColorBrewer::brewer.pal(11, "PuOr")))(100)
+
+pheatmap(r_mat, cluster_rows = TRUE, cluster_cols = TRUE,
+         display_numbers = labels_mat, fontsize_number = 8, fontsize = 10,
+         color = heatmap_colors,
+         breaks = seq(-1, 1, length.out = 101))
+```
+
+### 2) Spatial Hotspots of Community Change (TBI)
+
+#### a) Richesse spécifique (2020 vs 2025)
+
+On calcule la richesse spécifique par relevé, on compare 2020 vs 2025 par lagune avec un test de Wilcoxon apparié, après vérification de la distribution des différences.
+
+```{r richness-prep}
+#| label: richesse-prep
+
+n_sp <- macro %>%
+  rowwise() %>%
+  mutate(n_sp = sum(c_across(all_of(species_cols)) > 0)) %>%
+  ungroup() %>%
+  dplyr::select(Year, Site, ID_LAG, n_sp)
+
+df_wide_sp <- n_sp %>%
+  filter(Year %in% c(2020, 2025)) %>%
+  pivot_wider(names_from = Year, values_from = n_sp, names_prefix = "n_sp_") %>%
+  drop_na()
+```
+
+**Vérifications avant le test apparié (richesse spécifique)**
+
+-   Le test de Wilcoxon apparié ne demande pas la normalité, mais il suppose une distribution symétrique des différences ; on regarde donc rapidement la distribution des différences et le nombre d'ex-aequo (`ties`).
+-   On vérifie aussi que l'appariement est correct : un même `ID_LAG` doit correspondre au même site réel dans les deux années.
+
+```{r richness-check}
+#| label: richesse-check
+
+diff_sp <- df_wide_sp$n_sp_2025 - df_wide_sp$n_sp_2020
+cat("N paires :", nrow(df_wide_sp), "\n")
+cat("Ex-aequo (différences nulles) :", sum(diff_sp == 0), "\n")
+hist(diff_sp, main = "Distribution des différences (2025 - 2020)", xlab = "Δ richesse")
+```
+
+```{r richness-test}
+#| label: richesse-test
+
+wilcox_sp <- wilcox.test(df_wide_sp$n_sp_2020, df_wide_sp$n_sp_2025, paired = TRUE,
+                          exact = (sum(diff_sp == 0) == 0))
+wilcox_sp
+```
+
+```{r fig-richness}
+#| label: fig-richness
+#| fig-cap: "Richesse spécifique par site, 2020 vs 2025"
+
+# Agrégation par Site : moyenne et erreur type de la richesse
+site_summary <- n_sp %>%
+  filter(Year %in% c(2020, 2025)) %>%
+  group_by(Site, Year) %>%
+  summarise(mean_sp = mean(n_sp), sd_sp = sd(n_sp), n_lag = dplyr::n(),
+            .groups = "drop") %>%
+  mutate(se_sp = sd_sp / sqrt(n_lag))
+
+site_wide <- site_summary %>%
+  pivot_wider(id_cols = Site, names_from = Year,
+              values_from = c(mean_sp, se_sp),
+              names_glue = "{.value}_{Year}") %>%
+  drop_na()
+
+p_richness <- ggplot(site_wide, aes(x = mean_sp_2020, y = mean_sp_2025, color = Site)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
+  geom_segment(aes(x = mean_sp_2020, xend = mean_sp_2020,
+                    y = mean_sp_2025 - se_sp_2025, yend = mean_sp_2025 + se_sp_2025)) +
+  geom_segment(aes(x = mean_sp_2020 - se_sp_2020, xend = mean_sp_2020 + se_sp_2020,
+                    y = mean_sp_2025, yend = mean_sp_2025)) +
+  geom_point(shape = 21, fill = "white", size = 10, stroke = 1) +
+  geom_text(aes(label = Site), fontface = "bold", size = 6, show.legend = FALSE) +
+  scale_x_continuous(limits = c(0, 4), breaks = 0:4) +
+  scale_y_continuous(limits = c(0, 4), breaks = 0:4) +
+  labs(x = "Number of species in 2020", y = "Number of species in 2025",
+       subtitle = paste0("p = ",
+                          signif(wilcox_sp$p.value, 3))) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+p_richness
+
+ggsave("figure_richesse_finale.svg", plot = p_richness, width = 6, height = 6, units = "in")
+```
+
+#### b) TBI 
+
+Calcul du Temporal Beta-diversity Index (TBI) entre 2020 et 2025 pour chaque lagune échantillonnée aux deux dates : `pertes` (espèces disparues), `gains` (espèces apparues) et `change` (dissimilarité totale D).
+
+```{r tbi}
+#| label: tbi
+
+macro_t1 <- macro %>% filter(Year == 2020) %>% arrange(ID_LAG)
+macro_t2 <- macro %>% filter(Year == 2025) %>% arrange(ID_LAG)
+common_ids <- intersect(macro_t1$ID_LAG, macro_t2$ID_LAG)
+macro_t1 <- macro_t1 %>% filter(ID_LAG %in% common_ids) %>% arrange(ID_LAG)
+macro_t2 <- macro_t2 %>% filter(ID_LAG %in% common_ids) %>% arrange(ID_LAG)
+
+sp_t1 <- macro_t1 %>% dplyr::select(all_of(species_cols)) %>% as.data.frame()
+sp_t2 <- macro_t2 %>% dplyr::select(all_of(species_cols)) %>% as.data.frame()
+rownames(sp_t1) <- macro_t1$ID_LAG
+rownames(sp_t2) <- macro_t2$ID_LAG
+
+keep_tbi <- which(rowSums(sp_t1) != 0 | rowSums(sp_t2) != 0)
+sp_t1 <- sp_t1[keep_tbi, ]; sp_t2 <- sp_t2[keep_tbi, ]
+ids_tbi <- macro_t1$ID_LAG[keep_tbi]
+
+tbi_raw <- TBI(sp_t1, sp_t2, method = "%difference", nperm = 999, test.t.perm = FALSE)
+
+tbi_result <- data.frame(
+  ID_LAG  = ids_tbi,
+  TBI     = tbi_raw$TBI,
+  p_value = tbi_raw$p.TBI,
+  pertes  = tbi_raw$BCD.mat[, "B/(2A+B+C)"],
+  gains   = tbi_raw$BCD.mat[, "C/(2A+B+C)"],
+  change  = tbi_raw$BCD.mat[, "D=(B+C)/(2A+B+C)"]
+) %>%
+  left_join(macro_t1 %>% dplyr::select(ID_LAG, Site), by = "ID_LAG")
+
+tbi_result %>% arrange(desc(change)) %>% head(5)
+```
+
+```{r tbi-plot}
+#| label: fig-tbi
+#| fig-cap: "TBI par site"
+
+site_order <- tbi_result %>%
+  group_by(Site) %>%
+  summarise(median_change = median(change), q1_change = quantile(change, 0.25),
+            .groups = "drop") %>%
+  arrange(desc(median_change), desc(q1_change)) %>%
+  pull(Site)
+
+tbi_result <- tbi_result %>% mutate(Site = factor(Site, levels = site_order))
+
+p_tbi_site <- ggplot(tbi_result, aes(Site, change)) +
+  geom_boxplot(fill = "#8ECFC9") +
+  geom_jitter(width = 0.2, size = 1, alpha = 0.7, color = "grey70") +
+  geom_hline(yintercept = 0, color = "grey80") +
+  labs(x = "Site", y = "TBI - Total dissimilarity") +
+  theme_minimal(base_size = 18) +
+  theme(axis.text = element_text(size = 18, face = "bold")) 
+
+p_tbi_site
+```
+
+```{r tbi-gains-losses}
+#| label: fig-tbi-gains-pertes
+#| fig-cap: "Gains vs losses (TBI)"
+
+diff_gp <- tbi_result$gains - tbi_result$pertes
+delta   <- mean(diff_gp, na.rm = TRUE)
+test_gp <- wilcox.test(diff_gp, mu = 0)
+
+p_tbi_gp <- ggplot(tbi_result, aes(pertes, gains)) +
+  geom_point(size = 1.5, color = "grey70") +
+  geom_abline(slope = 1, intercept = 0, color = "#009E73", linewidth = 1.8) +
+  geom_abline(slope = 1, intercept = delta, color = "#D55E00",
+              linetype = "dotted", linewidth = 1.8) +
+  annotate("text", x = 0.03, y = 0.97, hjust = 0, vjust = 1, size = 4.5,
+           label = paste0("delta = ", round(delta, 3))) +
+  coord_equal(xlim = c(0, 1), ylim = c(0, 1), expand = FALSE, clip = "on") +
+  labs(x = "Losses B/(2A+B+C)", y = "Gains C/(2A+B+C)") +
+  theme_minimal(base_size = 18) +
+  theme(panel.border = element_rect(color = "black", fill = NA, linewidth = 0.8),
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        axis.text = element_text(size = 18, face = "bold"))   
+
+p_tbi_gp
+```
+
+Figure composite
+
+```{r}
+#| label: fig-tbi-panel
+#| fig-cap: "TBI par site et gains vs pertes, cote à cote"
+
+p_tbi_panel <- (p_tbi_site + p_tbi_gp) +
+  plot_layout(ncol = 2) +
+  plot_annotation(tag_levels = "a") &
+  theme(plot.tag = element_text(size = 20, face = "bold"))
+
+p_tbi_panel
+
+ggsave("figure_tbi_panel_finaleV2.svg", plot = p_tbi_panel, width = 16, height = 9, units = "in")
+ggsave("figure_tbi_panel_finaleV2.png", plot = p_tbi_panel, width = 16, height = 9, units = "in")
+```
+
+On construit ensuite le tableau des variables explicatives : le Delta (2025 - 2020) de chaque variable environnementale, pour chaque lagune.
+
+```{r tbi-lm-data}
+#| label: tbi-lm-donnees
+
+envir_2020 <- envir %>% filter(Year == 2020) %>% drop_na() %>% arrange(ID_LAG)
+envir_2025 <- envir %>% filter(Year == 2025) %>% drop_na() %>% arrange(ID_LAG)
+common_env_ids <- intersect(envir_2020$ID_LAG, envir_2025$ID_LAG)
+envir_2020 <- envir_2020 %>% filter(ID_LAG %in% common_env_ids) %>% arrange(ID_LAG)
+envir_2025 <- envir_2025 %>% filter(ID_LAG %in% common_env_ids) %>% arrange(ID_LAG)
+stopifnot(identical(envir_2020$ID_LAG, envir_2025$ID_LAG))
+
+env_vars_2020 <- envir_2020 %>% dplyr::select(-all_of(meta_cols))
+env_vars_2025 <- envir_2025 %>% dplyr::select(-all_of(meta_cols))
+delta_envir <- env_vars_2025 - env_vars_2020
+delta_envir$ID_LAG <- envir_2020$ID_LAG
+
+df_model <- tbi_result %>% inner_join(delta_envir, by = "ID_LAG")
+```
+
+::: callout-note
+**Avant de modéliser : distribution du TBI et des variables Delta**
+
+Avant de choisir/valider un LM simple, on regarde la distribution brute de la variable réponse (`change`, la dissimilarité totale D) et de chaque variable explicative Delta, avec un test de normalité (Shapiro-Wilk) à titre indicatif. On regarde aussi si l'amplitude du changement (Delta) dépend du niveau moyen de la variable sur les deux dates .
+:::
+
+```{r tbi-distributions}
+#| label: tbi-distributions
+#| fig-cap: "Distribution du TBI (change) et des variables environnementales Delta"
+
+# 1. Distribution brute de la métrique réponse (D = dissimilarité totale)
+hist(df_model$change, main = "Distribution du TBI (change)", xlab = "TBI (D)")
+shapiro.test(df_model$change)   # H0 = normalité ; indicatif seulement (n petit)
+
+# 2. Distribution de chaque variable environnementale Delta (2025 - 2020)
+env_delta_names <- setdiff(colnames(delta_envir), "ID_LAG")
+
+par(mfrow = c(3, 3))
+for (v in env_delta_names) {
+  hist(delta_envir[[v]], main = v, xlab = "Delta (2025 - 2020)")
+}
+par(mfrow = c(1, 1))
+
+# 3. Delta en fonction de la moyenne (2020-2025) : détecte une éventuelle
+# dépendance entre l'ampleur du changement et le niveau moyen de la variable
+mean_envir <- (env_vars_2020 + env_vars_2025) / 2
+mean_envir$ID_LAG <- envir_2020$ID_LAG
+
+par(mfrow = c(3, 3))
+for (v in env_delta_names) {
+  plot(mean_envir[[v]], delta_envir[[v]],
+       xlab = paste("Moyenne", v), ylab = paste("Delta", v),
+       main = v, pch = 19, col = "steelblue")
+  abline(h = 0, lty = 2, col = "grey60")
+}
+par(mfrow = c(1, 1))
+```
+
+```{r}
+#| label: tbi-distributions
+#| fig-cap: "Distribution du TBI (change) et des variables environnementales Delta"
+
+# 1. Vegetation status of each paired lagoon (2020 vs 2025)
+stopifnot(identical(macro_t1$ID_LAG, macro_t2$ID_LAG))
+
+niveaux_type <- c("Compositional change",
+                  "Vegetation → 0 (total loss)",
+                  "0 → vegetation (colonisation)",
+                  "No vegetation in both years")
+
+statut_lagunes <- data.frame(
+  ID_LAG   = macro_t1$ID_LAG,
+  veg_2020 = rowSums(macro_t1[, species_cols]) > 0,
+  veg_2025 = rowSums(macro_t2[, species_cols]) > 0
+) %>%
+  mutate(type_changement = factor(case_when(
+    veg_2020 & veg_2025   ~ "Compositional change",
+    veg_2020 & !veg_2025  ~ "Vegetation → 0 (total loss)",
+    !veg_2020 & veg_2025  ~ "0 → vegetation (colonisation)",
+    TRUE                  ~ "No vegetation in both years"
+  ), levels = niveaux_type))
+
+# 2. Attach the TBI ; lagoons empty in both years: D = 0 by convention
+df_hist <- statut_lagunes %>%
+  left_join(tbi_result %>% dplyr::select(ID_LAG, change), by = "ID_LAG") %>%
+  mutate(change = ifelse(type_changement == "No vegetation in both years", 0, change))
+
+print(table(df_hist$type_changement))
+print(table(df_hist$type_changement, D_equals_1 = round(df_hist$change, 6) == 1))
+
+# 3. Dataset for the LMs: only lagoons WITH vegetation in both years
+ids_veg_both <- statut_lagunes %>% filter(veg_2020 & veg_2025) %>% pull(ID_LAG)
+df_model_veg <- df_model %>% filter(ID_LAG %in% ids_veg_both)
+cat("Lagoons kept for the LMs:", nrow(df_model_veg), "/", nrow(df_model), "\n")
+
+# 4. Normal curve parameters, fitted on "Compositional change" lagoons only
+val_comp   <- df_hist$change[df_hist$type_changement == "Compositional change"]
+mu_comp    <- mean(val_comp, na.rm = TRUE)
+sd_comp    <- sd(val_comp, na.rm = TRUE)
+n_comp     <- sum(!is.na(val_comp))
+binwidth_h <- 0.05
+
+cat("Compositional change: n =", n_comp,
+    "| mean =", round(mu_comp, 3), "| sd =", round(sd_comp, 3), "\n")
+shapiro.test(val_comp)   # normality of the LM response, indicative only
+
+# 5. Stacked histogram (compositional change at the bottom) + normal curve
+p_hist_tbi <- ggplot(df_hist, aes(change, fill = type_changement)) +
+  geom_histogram(binwidth = binwidth_h, center = 0, colour = "white",
+                 position = position_stack(reverse = TRUE)) +
+  stat_function(fun = function(x) dnorm(x, mean = mu_comp, sd = sd_comp) * n_comp * binwidth_h,
+                colour = "#332288", linewidth = 1.2, n = 300,
+                inherit.aes = FALSE) +
+  # Paul Tol "muted" palette (colourblind-safe)
+  scale_fill_manual(values = c(
+    "Compositional change"          = "#44AA99",
+    "Vegetation → 0 (total loss)"   = "#CC6677",
+    "0 → vegetation (colonisation)" = "#DDCC77",
+    "No vegetation in both years"   = "#BBBBBB"
+  ), drop = FALSE) +
+  labs(x = "TBI (D)", y = "Number of lagoons", fill = "Change type") +
+  theme_minimal(base_size = 18)
+
+p_hist_tbi
+
+# 6. Distribution of each environmental Delta variable (2025 - 2020)
+env_delta_names <- setdiff(colnames(delta_envir), "ID_LAG")
+
+par(mfrow = c(3, 3))
+for (v in env_delta_names) {
+  hist(delta_envir[[v]], main = v, xlab = "Delta (2025 - 2020)")
+}
+par(mfrow = c(1, 1))
+
+# 7. Delta versus mean value (2020-2025)
+mean_envir <- (env_vars_2020 + env_vars_2025) / 2
+mean_envir$ID_LAG <- envir_2020$ID_LAG
+
+par(mfrow = c(3, 3))
+for (v in env_delta_names) {
+  plot(mean_envir[[v]], delta_envir[[v]],
+       xlab = paste("Mean", v), ylab = paste("Delta", v),
+       main = v, pch = 19, col = "steelblue")
+  abline(h = 0, lty = 2, col = "grey60")
+}
+par(mfrow = c(1, 1))
+```
+
+```{r}
+#| label: tbi-lm-diagnostic
+
+# Keep only Delta variables that actually vary among the 37 lagoons
+# (Surface and dist_trait_cote_m are time-invariant: Delta = 0 everywhere)
+sd_delta <- sapply(df_model_veg[, env_delta_names], sd, na.rm = TRUE)
+print(round(sd_delta, 3))
+env_delta_var <- names(sd_delta)[sd_delta > 0]
+cat("Delta variables removed (no temporal variation):",
+    setdiff(env_delta_names, env_delta_var), "\n")
+cat("n lagoons:", nrow(df_model_veg), "| n predictors:", length(env_delta_var), "\n")
+
+# Correlations between the retained Delta variables
+print(round(cor(df_model_veg[, env_delta_var]), 2))
+
+# VIF on the retained Delta variables (same sample as the LM)
+vif_delta <- sapply(env_delta_var, function(v) {
+  fit <- lm(as.formula(paste(v, "~ .")), data = df_model_veg[, env_delta_var])
+  1 / (1 - summary(fit)$r.squared)
+})
+print(round(vif_delta, 2))
+```
+
+```{r tbi-lm}
+#| label: tbi-lm
+
+# LMs on lagoons with vegetation in BOTH years, using only the Delta variables
+# with temporal variation (env_delta_var, defined in 'tbi-lm-diagnostic').
+# Additive model, no variable selection.
+cat("n lagoons:", nrow(df_model_veg), "| n predictors:", length(env_delta_var), "\n")
+
+df_lm_change <- df_model_veg %>% dplyr::select(change, all_of(env_delta_var))
+modele_change <- lm(change ~ ., data = df_lm_change)
+summary(modele_change)
+
+# Residual diagnostics
+par(mfrow = c(2, 2)); plot(modele_change); par(mfrow = c(1, 1))
+plot(modele_change, which = 4)                  # Cook's distance
+shapiro.test(residuals(modele_change))          # normality of the residuals
+
+df_lm_pertes <- df_model_veg %>% dplyr::select(pertes, all_of(env_delta_var))
+modele_pertes <- lm(pertes ~ ., data = df_lm_pertes)
+summary(modele_pertes)
+```
+
+### 3) Modélisation de la niche réalisée des espèces clés
+
+```{r vars-env-niche}
+#| label: vars-env-niche
+
+# Labels d'affichage des variables environnementales (repris de la section RDA)
+vars_env <- c(
+  salinity = "Salinity", organic_matter = "Organic matter",
+  ilr_fines_vs_sand = "Fines/Sand ratio", ilr_clay_vs_silt = "Clay/Silt ratio",
+  water_level = "Water level (cm)", Surface = "Surface (m²)",
+  dist_trait_cote_m = "Distance to coastline (m)", mise_en_eau_num = "Reflooding date (j)",
+  duree_assec = "Dry period duration (j)"
+)
+
+especes_signif <- c("Ruppia.maritima", "Althenia.filiformis", "Lamprothamnium.papulosum")
+especes_signif <- intersect(especes_signif, species_cols)
+```
+
+Avant de modéliser, on vérifie que le recouvrement de chaque espèce s'aligne bien sur une grille de pas ≈ 0.05 (donc sur 20 niveaux possibles, de 0/20 à 20/20), ce qui justifie le passage en comptage binomial.
+
+```{r niche-check-response}
+#| label: niche-check-reponse
+
+for (sp in especes_signif) {
+  vals <- df_merged_final[[sp]]
+  n_niveaux <- length(unique(na.omit(vals)))
+  cat(sp, ": n niveaux =", n_niveaux,
+      "| n = 0 :", sum(vals == 0, na.rm = TRUE),
+      "| n = 1 :", sum(vals == 1, na.rm = TRUE), "\n")
+}
+```
+
+```{r niche-data-prep}
+#| label: niche-data-prep
+
+n_essais <- 20   # recouvrement exprimé en pas de 0.05 -> équivalent à un ratio sur 20
+
+df_niche <- df_merged_final %>%
+  mutate(
+    Site   = factor(Site),
+    ID_LAG = factor(ID_LAG),
+    Year   = factor(Year)   # facteur à 2 niveaux : 2020 vs 2025 (plus simple à interpréter qu'un continu)
+  )
+```
+
+```{r niche-model-fit}
+#| label: niche-univariate-fit
+
+vars_all <- names(vars_env)
+
+# Un modèle par couple espèce x variable (bivarié), pas un modèle par
+# espèce avec toutes les variables en même temps : évite l'extrapolation
+# vers des combinaisons de variables jamais observées dans les données.
+fit_one <- function(sp, var) {
+  df_sp <- df_niche %>%
+    filter(complete.cases(across(c(all_of(sp), var, "Year")))) %>%
+    mutate(succes = round(.data[[sp]] * n_essais),
+           echecs = n_essais - succes,
+           x = .data[[var]])
+
+  mod_null <- glm(cbind(succes, echecs) ~ Year,             data = df_sp, family = binomial)
+  mod_lin  <- glm(cbind(succes, echecs) ~ Year + x,          data = df_sp, family = binomial)
+  mod_quad <- glm(cbind(succes, echecs) ~ Year + poly(x, 2), data = df_sp, family = binomial)
+
+  aics      <- c(null = AIC(mod_null), linear = AIC(mod_lin), quadratic = AIC(mod_quad))
+  best_form <- names(aics)[which.min(aics)]
+  best_mod  <- list(null = mod_null, linear = mod_lin, quadratic = mod_quad)[[best_form]]
+
+  list(species = sp, variable = var, df = df_sp,
+       delta_aic = as.numeric(aics["null"] - min(aics)),   # gain d'AIC vs modèle nul = "impact"
+       form = best_form, model = best_mod)
+}
+
+resultats_univaries <- list()
+for (sp in especes_signif) {
+  for (var in vars_all) {
+    resultats_univaries[[paste(sp, var, sep = "__")]] <- fit_one(sp, var)
+  }
+}
+
+tab_impact <- do.call(rbind, lapply(resultats_univaries, function(r) {
+  data.frame(species = r$species, variable = r$variable, form = r$form, delta_aic = r$delta_aic)
+})) %>% arrange(species, desc(delta_aic))
+
+tab_impact
+```
+
+```{r fig-niche-effets}
+#| label: fig-niche-univarie
+#| fig-cap: "Niche réalisée (approche univariée) : recouvrement attendu par variable, moyenné sur les deux années. Variables et ordre choisis manuellement par espèce."
+
+# Variables et ORDRE choisis manuellement, espèce par espèce
+vars_althenia <- c("water_level", "ilr_fines_vs_sand", "dist_trait_cote_m", "duree_assec")
+vars_ruppia   <- c("water_level", "ilr_fines_vs_sand", "Surface", "organic_matter")
+vars_lampro   <- c("water_level", "salinity", "dist_trait_cote_m", "organic_matter")
+
+vars_par_espece <- list(
+  "Ruppia.maritima"           = vars_ruppia,
+  "Althenia.filiformis"       = vars_althenia,
+  "Lamprothamnium.papulosum"  = vars_lampro
+)
+
+compute_curve_uni <- function(sp, var) {
+  r <- resultats_univaries[[paste(sp, var, sep = "__")]]
+  x_seq  <- seq(min(r$df$x, na.rm = TRUE), max(r$df$x, na.rm = TRUE), length.out = 200)
+  newdat <- expand.grid(x = x_seq, Year = levels(r$df$Year))
+  newdat$fit <- predict(r$model, newdata = newdat, type = "response")
+  newdat %>% group_by(x) %>% summarise(fit = mean(fit), .groups = "drop") %>%
+    mutate(species = sp, variable = var)
+}
+
+# Diagnostic : pour chaque variable choisie, rappelle si elle avait été
+# jugée "impactante" (delta_aic > 2) ou non par la sélection automatique -
+# utile pour vérifier vos choix manuels avant publication
+diag_choix <- do.call(rbind, lapply(names(vars_par_espece), function(sp) {
+  tab_impact %>% filter(species == sp, variable %in% vars_par_espece[[sp]])
+}))
+cat("Variables choisies manuellement (rappel du delta AIC associé) :\n")
+print(diag_choix)
+
+build_species_niche_uni <- function(sp, couleur) {
+  vars_sp <- vars_par_espece[[sp]]   # ordre EXACT défini manuellement ci-dessus
+
+  df_raw <- do.call(rbind, lapply(vars_sp, function(v) {
+    r <- resultats_univaries[[paste(sp, v, sep = "__")]]
+    data.frame(x = r$df$x, cover_obs = r$df[[sp]], variable = v)
+  })) %>% mutate(variable_label = factor(vars_env[variable], levels = unname(vars_env[vars_sp])))
+
+  df_pred <- do.call(rbind, lapply(vars_sp, function(v) compute_curve_uni(sp, v))) %>%
+    mutate(variable_label = factor(vars_env[variable], levels = unname(vars_env[vars_sp])))
+
+  ggplot() +
+    geom_jitter(data = df_raw, aes(x, cover_obs), height = 0.02, width = 0,
+                colour = "grey70", alpha = 0.5, size = 1) +
+    geom_line(data = df_pred, aes(x, fit), colour = couleur, linewidth = 1.3) +
+    facet_wrap(~variable_label, nrow = 1, scales = "free_x") +
+    labs(x = NULL, y = "Expected cover", title = gsub("\\.", " ", sp)) +
+    ylim(0, 1) +
+    theme_bw(base_size = 12) +
+    theme(plot.title = element_text(face = "italic", size = 13, hjust = 0))
+}
+
+p_ruppia   <- build_species_niche_uni("Ruppia.maritima", "#0072B2")
+p_althenia <- build_species_niche_uni("Althenia.filiformis", "#009E73")
+p_lampro   <- build_species_niche_uni("Lamprothamnium.papulosum", "#E69F00")
+
+p_niche_uni <- p_ruppia / p_althenia / p_lampro
+p_niche_uni
+
+ggsave("niche_realisee_univariee.svg", plot = p_niche_uni, width = 14, height = 9, units = "in")
+```
+
+### 4) Wilcoxon par espèce (changement d'abondance 2020 vs 2025)
+
+Section conservée à l'identique : test de Wilcoxon apparié par espèce (correction de Benjamini-Hochberg pour tests multiples), complémentaire à la modélisation de niche ci-dessus.
+
+```{r species-wilcoxon}
+#| label: wilcoxon-especes
+
+resultats <- data.frame(Espece = species_cols, W_statistic = NA_real_, p_value = NA_real_)
+
+for (i in seq_along(species_cols)) {
+  sp <- species_cols[i]
+  df_wide <- macro %>%
+    filter(Year %in% c(2020, 2025)) %>%
+    dplyr::select(ID_LAG, Year, all_of(sp)) %>%
+    pivot_wider(names_from = Year, values_from = all_of(sp), names_prefix = "y") %>%
+    drop_na()
+  if (nrow(df_wide) > 1) {
+    test <- wilcox.test(df_wide$y2020, df_wide$y2025, paired = TRUE, exact = FALSE)
+    resultats$W_statistic[i] <- test$statistic
+    resultats$p_value[i] <- test$p.value
+  }
+}
+
+# Correction pour tests multiples (une comparaison par espèce)
+resultats$p_adj <- p.adjust(resultats$p_value, method = "BH")
+resultats <- resultats[order(resultats$p_value), ]
+resultats
+```
+
+::: callout-warning
+Un test de Wilcoxon est répété pour chaque espèce : la colonne `p_adj` (correction de Benjamini-Hochberg) est à utiliser de préférence à `p_value` brute pour décider quelles espèces ont réellement changé.
+:::
+
+```{r species-plot}
+#| label: fig-especes-signif
+#| fig-cap: "Abondance par espèce, 2020 vs 2025"
+
+df_long <- macro %>%
+  filter(Year %in% c(2020, 2025)) %>%
+  dplyr::select(ID_LAG, Year, all_of(especes_signif)) %>%
+  pivot_longer(all_of(especes_signif), names_to = "Espece", values_to = "Abondance")
+
+ggplot(df_long, aes(Espece, Abondance, fill = factor(Year))) +
+  geom_boxplot(position = position_dodge(0.8), alpha = 0.6) +
+  labs(x = "Espèce", y = "Abondance", fill = "Année") +
+  theme_minimal(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_manual(values = c("2020" = "#F8766D", "2025" = "#00BFC4"))
+```
+
+```{r session-info}
+#| label: session-info
+
+sessionInfo()
+```
