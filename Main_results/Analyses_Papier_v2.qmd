@@ -30,6 +30,7 @@ library(here)        # chemins relatifs -> reproductible sur n'importe quelle ma
 library(permute)     
 library(corrplot)
 library(lme4)       
+library(comple)
 
 # ------------------------------------------------------------------
 # Graine unique pour TOUT le document (clustering, permutations, sélection...)
@@ -514,6 +515,58 @@ heatmap_colors <- colorRampPalette(rev(RColorBrewer::brewer.pal(11, "PuOr")))(10
 
 pheatmap(r_mat, cluster_rows = TRUE, cluster_cols = TRUE,
          display_numbers = labels_mat, fontsize_number = 8, fontsize = 10,
+         color = heatmap_colors,
+         breaks = seq(-1, 1, length.out = 101))
+```
+
+```{r}
+#| label: fig-rda-heatmap
+#| fig-cap: "Corrélation de Spearman espèces / variables environnementales (* p<.05, ** p<.01, *** p<.001)"
+
+species_names <- colnames(Y_clean)
+env_names     <- colnames(X_clean)
+
+r_mat <- matrix(NA_real_, nrow = length(species_names), ncol = length(env_names),
+                 dimnames = list(species_names, env_names))
+p_mat <- r_mat
+
+for (sp in species_names) {
+  for (ev in env_names) {
+    test <- suppressWarnings(cor.test(Y_clean[[sp]], X_clean[[ev]], method = "spearman"))
+    r_mat[sp, ev] <- test$estimate
+    p_mat[sp, ev] <- test$p.value
+  }
+}
+
+stars <- ifelse(p_mat < 0.001, "***",
+          ifelse(p_mat < 0.01,  "**",
+           ifelse(p_mat < 0.05,  "*", "")))
+labels_mat <- matrix(paste0(round(r_mat, 2), stars), nrow = nrow(r_mat),
+                      dimnames = dimnames(r_mat))
+
+# Noms d'espèces abrégés (genre -> initiale) pour gagner de la place,
+# ex. "Althenia.filiformis" -> "A. filiformis" (pas d'italique possible
+# avec pheatmap -> texte droit)
+abbrev_species <- function(x) {
+  parts <- strsplit(gsub("\\.", " ", x), " ")
+  sapply(parts, function(p) paste0(substr(p[1], 1, 1), ". ", paste(p[-1], collapse = " ")))
+}
+rownames(r_mat)      <- abbrev_species(rownames(r_mat))
+rownames(labels_mat) <- rownames(r_mat)
+
+# Labels des variables environnementales (déjà définis pour la RDA)
+colnames(r_mat)      <- vars_env_labels[colnames(r_mat)]
+colnames(labels_mat) <- colnames(r_mat)
+
+heatmap_colors <- colorRampPalette(rev(RColorBrewer::brewer.pal(11, "PuOr")))(100)
+
+pheatmap(r_mat, cluster_rows = TRUE, cluster_cols = TRUE,
+         display_numbers = labels_mat,
+         fontsize_number = 10,        # taille des valeurs/étoiles dans les cases
+         fontsize = 12,                # taille de base (étiquettes lignes/colonnes)
+         fontsize_row = 14,
+         fontsize_col = 12,
+         angle_col = 45,               # étiquettes de colonnes en oblique
          color = heatmap_colors,
          breaks = seq(-1, 1, length.out = 101))
 ```
