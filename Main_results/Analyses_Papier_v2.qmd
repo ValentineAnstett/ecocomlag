@@ -56,8 +56,6 @@ env_vars <- c("organic_matter", "ilr_fines_vs_sand", "ilr_clay_vs_silt",
               "mise_en_eau_num", "duree_assec")
 ```
 
-Le chunk suivant charge le tableau de données, retire les lagunes identifiées comme des mares/lagunes permanentes (`outlier_lagoons`), recode les absences d'espèces (`NA`) en zéros, retire les espèces jamais observées après filtrage, et construit trois sous-tableaux utilisés dans le reste du document (`macro` : espèces ; `envir` : variables environnementales ; `df_merged_final` : les deux combinés).
-
 ```{r data-loading}
 #| label: chargement-des-donnees
 
@@ -292,12 +290,6 @@ ggplot(indval_tab, aes(x = reorder(species, stat), y = stat)) +
 
 #### b)PERMANOVA appariée - Composition globale : effet Site et Année
 
-***Point à valider/discuter*** : Chaque lagune (`ID_LAG`) est ré-échantillonnée aux deux dates : les relevés ne sont donc pas indépendants (mesures répétées / appariées), ce qui viole l'hypothèse d'échangeabilité libre des permutations d'un `adonis2` classique. On construit ici deux schémas de permutation contraints avec `permute::how()` :
-
--   pour l'effet **Année** (facteur "intra-sujet", apparié) : les permutations sont autorisées **uniquement à l'intérieur de chaque lagune** (entre ses deux dates), jamais entre lagunes ;
--   pour l'effet **Site** (facteur "inter-sujet") : à l'inverse, on permute des **blocs entiers de lagune** (les deux dates d'une même lagune restent ensemble), jamais à l'intérieur d'un bloc.
--   
-
 ```{r permanova-site-year}
 #| label: permanova-site-annee
 
@@ -336,13 +328,6 @@ adonis2(dist_bc ~ Site, data = meta_clean, permutations = perm_site, by = "margi
 ```
 
 #### c)RDA contrainte - Facteurs écologiques de la composition
-
-L'objectif est de caractériser le lien végétation-environnement en utilisant **tous** les relevés disponibles (2020 et 2025). Comme chaque lagune est re-échantillonnée (pseudo-réplication temporelle) et que le Site structure fortement la composition, on :
-
-1.  retire l'effet Site en le mettant en `Condition()` dans la RDA (RDA partielle) ;
-2.  contraint les permutations du test à se faire **à l'intérieur de chaque lagune** (`blocks = ID_LAG`), pour ne comparer les changements d'environnement et de composition qu'au sein d'une même lagune entre les deux dates.
-
-(On conserve `ID_LAG` et `Site` en plus des variables numériques, pour pouvoir construire ensuite le terme `Condition(Site)` et le schéma de permutation par blocs.)
 
 ```{r rda-checks}
 #| label: rda-verifications
@@ -458,65 +443,24 @@ p_rda <- ggplot() +
   geom_segment(data = sc_sp, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
                arrow = arrow(length = unit(0.25, "cm")), colour = "#009E73") +
   geom_text_repel(data = sc_sp, aes(RDA1, RDA2, label = Species), colour = "#009E73",
-                   size = 6.3, fontface = "bold") +          # flèches espèces : texte grossi
+                   size = 5.3, fontface = "bold") +        
   geom_segment(data = sc_env, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
                arrow = arrow(length = unit(0.25, "cm")), colour = "#E69F00") +
   geom_text_repel(data = sc_env, aes(RDA1, RDA2, label = Var), colour = "#E69F00",
-                   size = 6.3, fontface = "bold") +           # flèches environnement : texte grossi
+                   size = 5.3, fontface = "bold") +           
   geom_hline(yintercept = 0) + geom_vline(xintercept = 0) +
   xlab(paste0("RDA1 (", round(eig_pct[1], 1), "%)")) +
   ylab(paste0("RDA2 (", round(eig_pct[2], 1), "%)")) +
   theme_minimal(base_size = 18) +
   theme(
     panel.border = element_rect(color = "black", fill = NA),
-    axis.title   = element_text(size = 18, face = "bold"),   # titres d'axe (RDA1/RDA2) grossis
-    axis.text    = element_text(size = 18, face = "bold")    # numéros d'axe grossis
-  )
+    axis.title   = element_text(size = 18, face = "bold"),  
+    axis.text    = element_text(size = 18, face = "bold"))  
 
 p_rda
 
 # Ratio 16:9 (format écran) pour l'export SVG
 ggsave("figure_rda_colorblind.svg", plot = p_rda, width = 16, height = 9, units = "in")
-```
-
-::: callout-note
-Corrélation de rang (Spearman) plutôt que Pearson : plus robuste ici, car les données de recouvrement sont zéro-inflatées et les relations écologiques espèce-environnement sont rarement parfaitement linéaires (souvent en optimum/cloche). On utilise les valeurs brutes (`Y_clean`, pas `Y_hell`) pour que la corrélation d'une espèce donnée reste propre à cette espèce, indépendamment des autres.
-:::
-
-```{r rda-heatmap}
-#| label: fig-rda-heatmap
-#| fig-cap: "Corrélation de Spearman espèces / variables environnementales (* p<.05, ** p<.01, *** p<.001)"
-
-species_names <- colnames(Y_clean)
-env_names     <- colnames(X_clean)
-
-r_mat <- matrix(NA_real_, nrow = length(species_names), ncol = length(env_names),
-                 dimnames = list(species_names, env_names))
-p_mat <- r_mat
-
-for (sp in species_names) {
-  for (ev in env_names) {
-    test <- suppressWarnings(cor.test(Y_clean[[sp]], X_clean[[ev]], method = "spearman"))
-    r_mat[sp, ev] <- test$estimate
-    p_mat[sp, ev] <- test$p.value
-  }
-}
-
-stars <- ifelse(p_mat < 0.001, "***",
-          ifelse(p_mat < 0.01,  "**",
-           ifelse(p_mat < 0.05,  "*", "")))
-labels_mat <- matrix(paste0(round(r_mat, 2), stars), nrow = nrow(r_mat),
-                      dimnames = dimnames(r_mat))
-
-pheatmap(r_mat, cluster_rows = TRUE, cluster_cols = TRUE,
-         display_numbers = labels_mat, fontsize_number = 8, fontsize = 10)
-
-heatmap_colors <- colorRampPalette(rev(RColorBrewer::brewer.pal(11, "PuOr")))(100)
-
-pheatmap(r_mat, cluster_rows = TRUE, cluster_cols = TRUE,
-         display_numbers = labels_mat, fontsize_number = 8, fontsize = 10,
-         color = heatmap_colors,
-         breaks = seq(-1, 1, length.out = 101))
 ```
 
 ```{r}
@@ -545,8 +489,6 @@ labels_mat <- matrix(paste0(round(r_mat, 2), stars), nrow = nrow(r_mat),
                       dimnames = dimnames(r_mat))
 
 # Noms d'espèces abrégés (genre -> initiale) pour gagner de la place,
-# ex. "Althenia.filiformis" -> "A. filiformis" (pas d'italique possible
-# avec pheatmap -> texte droit)
 abbrev_species <- function(x) {
   parts <- strsplit(gsub("\\.", " ", x), " ")
   sapply(parts, function(p) paste0(substr(p[1], 1, 1), ". ", paste(p[-1], collapse = " ")))
@@ -554,7 +496,7 @@ abbrev_species <- function(x) {
 rownames(r_mat)      <- abbrev_species(rownames(r_mat))
 rownames(labels_mat) <- rownames(r_mat)
 
-# Labels des variables environnementales (déjà définis pour la RDA)
+# Labels des variables environnementales 
 colnames(r_mat)      <- vars_env_labels[colnames(r_mat)]
 colnames(labels_mat) <- colnames(r_mat)
 
@@ -575,8 +517,6 @@ pheatmap(r_mat, cluster_rows = TRUE, cluster_cols = TRUE,
 
 #### a) Richesse spécifique (2020 vs 2025)
 
-On calcule la richesse spécifique par relevé, on compare 2020 vs 2025 par lagune avec un test de Wilcoxon apparié, après vérification de la distribution des différences.
-
 ```{r richness-prep}
 #| label: richesse-prep
 
@@ -591,11 +531,6 @@ df_wide_sp <- n_sp %>%
   pivot_wider(names_from = Year, values_from = n_sp, names_prefix = "n_sp_") %>%
   drop_na()
 ```
-
-**Vérifications avant le test apparié (richesse spécifique)**
-
--   Le test de Wilcoxon apparié ne demande pas la normalité, mais il suppose une distribution symétrique des différences ; on regarde donc rapidement la distribution des différences et le nombre d'ex-aequo (`ties`).
--   On vérifie aussi que l'appariement est correct : un même `ID_LAG` doit correspondre au même site réel dans les deux années.
 
 ```{r richness-check}
 #| label: richesse-check
