@@ -422,10 +422,19 @@ vif.cca(rda_result)               # colinéarité résiduelle dans le modèle aj
 #| label: fig-rda
 #| fig-cap: "RDA (partielle, Condition = Site) espèces ~ environnement"
 
+# Noms d'espèces abrégés (genre -> initiale) pour gagner de la place,
+abbrev_species <- function(x) {
+  parts <- strsplit(gsub("\\.", " ", x), " ")
+  sapply(parts, function(p) paste0(substr(p[1], 1, 1), ". ", paste(p[-1], collapse = " ")))
+}
+rownames(r_mat)      <- abbrev_species(rownames(r_mat))
+rownames(labels_mat) <- rownames(r_mat)
+
+
 sc_site <- as.data.frame(scores(rda_result, display = "sites", scaling = 2))
 sc_sp   <- as.data.frame(scores(rda_result, display = "species", scaling = 2))
 sc_env  <- as.data.frame(scores(rda_result, display = "bp", scaling = 2))
-sc_sp$Species <- rownames(sc_sp)
+sc_sp$Species <- abbrev_species(rownames(sc_sp))
 
 vars_env_labels <- c(
   salinity = "Salinity", organic_matter = "Organic matter",
@@ -439,21 +448,22 @@ sc_env$Var <- vars_env_labels[rownames(sc_env)]
 eig_pct <- summary(rda_result)$concont$importance["Proportion Explained", 1:2] * 100
 
 p_rda <- ggplot() +
-  geom_point(data = sc_site, aes(RDA1, RDA2), colour = "grey70", size = 1.5) +
+  geom_point(data = sc_site, aes(RDA1, RDA2), colour = "grey70", size = 0.8) +
   geom_segment(data = sc_sp, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
                arrow = arrow(length = unit(0.25, "cm")), colour = "#009E73") +
   geom_text_repel(data = sc_sp, aes(RDA1, RDA2, label = Species), colour = "#009E73",
-                   size = 5.3, fontface = "bold") +        
+                   size = 7, fontface = "bold") +        
   geom_segment(data = sc_env, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
                arrow = arrow(length = unit(0.25, "cm")), colour = "#E69F00") +
   geom_text_repel(data = sc_env, aes(RDA1, RDA2, label = Var), colour = "#E69F00",
-                   size = 5.3, fontface = "bold") +           
+                   size = 7, fontface = "bold") +           
   geom_hline(yintercept = 0) + geom_vline(xintercept = 0) +
   xlab(paste0("RDA1 (", round(eig_pct[1], 1), "%)")) +
   ylab(paste0("RDA2 (", round(eig_pct[2], 1), "%)")) +
   theme_minimal(base_size = 18) +
   theme(
     panel.border = element_rect(color = "black", fill = NA),
+    panel.grid   = element_blank(),
     axis.title   = element_text(size = 18, face = "bold"),  
     axis.text    = element_text(size = 18, face = "bold"))  
 
