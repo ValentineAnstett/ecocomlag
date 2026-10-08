@@ -30,7 +30,7 @@ library(here)        # chemins relatifs -> reproductible sur n'importe quelle ma
 library(permute)     
 library(corrplot)
 library(lme4)       
-library(comple)
+# library(comple)
 
 # ------------------------------------------------------------------
 # Graine unique pour TOUT le document (clustering, permutations, sélection...)
@@ -40,7 +40,7 @@ set.seed(123)
 # ------------------------------------------------------------------
 # Chemin relatif vers les données
 # ------------------------------------------------------------------
-data_path <- here("df_merged_final.csv")
+data_path <- here("data/df_merged_final.csv")
 
 # ------------------------------------------------------------------
 # Lagunes exclues (cortège lagunes permanentes / mares)
@@ -61,6 +61,8 @@ env_vars <- c("organic_matter", "ilr_fines_vs_sand", "ilr_clay_vs_silt",
 
 df_all <- read_csv(data_path, show_col_types = FALSE) %>%
   filter(!(ID_LAG %in% outlier_lagoons))
+
+df_all_GP = df_all
 
 # Colonnes d'espèces identifiées par noms plutôt que par position
 species_cols <- setdiff(colnames(df_all), c(meta_cols, env_vars, non_species))
@@ -1213,3 +1215,310 @@ ggplot(pred_all, aes(x, fit, color = espece, linetype = espece)) +
 
 #ggsave("GAMM_colorblind.svg", plot = j , width = 7, height = 5,units = "in")
 ```
+
+## Mise a jour : Code de Guillaume
+
+### Formatage des données
+
+```{r}
+
+# Formatage du fichier
+
+# A. on appelle le jeu de données depuis le chunk de chargement
+data_mod = df_all_GP
+
+# B. Mise en forme et actuvalisation des données
+data_mod = data_mod %>%
+  select("Year", "Site", "ID_LAG", # plan echantillonnage
+         "Althenia.filiformis", "Lamprothamnium.papulosum", "Ruppia.maritima", # espèces retenues
+         "organic_matter", "ilr_fines_vs_sand", "ilr_clay_vs_silt", "water_level", "Surface", "dist_trait_cote_m", "salinity", "mise_en_eau_num", "duree_assec" ) %>% # variables environementales
+  mutate (Althenia.filiformis = Althenia.filiformis * 20, # repasse les données sur 20 points contact
+  Lamprothamnium.papulosum = Lamprothamnium.papulosum * 20, 
+  Ruppia.maritima = Ruppia.maritima * 20)
+
+```
+
+### Distribution globale des données
+
+```{r}
+
+## fonction de densité basique
+vars <- c(
+  "organic_matter",
+  "ilr_fines_vs_sand",
+  "ilr_clay_vs_silt",
+  "water_level",
+  "Surface",
+  "dist_trait_cote_m",
+  "salinity",
+  "mise_en_eau_num",
+  "duree_assec"
+)
+
+for (v in vars) {
+  plot(
+    density(data_mod[[v]], na.rm = TRUE),
+    main = v,
+    xlab = ""
+  )
+}
+
+```
+
+Permet de mieux comprendre la structure de l'échantillonnage.
+
+Je te laisse regarder, pour moi le plus gros problème est que surface a une longue queue de distribution (et c'est sans doute explicable mathématiquement, a cause du carré pour calculer l'aire) -\> je passerai ça en *log*.
+
+### 
+
+### Althenia
+
+#### Représenter les données avec des graphs pour chaque espèce
+
+```{r}
+# Dataset pour une espèce
+data_sp = data_mod %>%
+  select (-c("Lamprothamnium.papulosum", "Ruppia.maritima"))
+
+# 
+data_sp %>%
+  group_by(ID_LAG) %>%
+  summarise(
+    n_year = n_distinct(Year),
+    .groups = "drop"
+  ) %>%
+  count(n_year)
+
+data_sp <- data_sp %>%
+  group_by(ID_LAG) %>%
+  mutate(
+    dif = n_distinct(Year) == 2
+  ) %>%
+  ungroup() %>%
+  filter (dif == TRUE) %>%
+  select (-dif)
+
+# Data
+data_sp = data_sp %>% rename (espece = Althenia.filiformis)
+
+data_sp$Year = factor(data_sp$Year)
+data_sp$Site = factor(data_sp$Site)
+data_sp$ID_LAG = factor(data_sp$ID_LAG)
+
+
+```
+
+```{r}
+# Graph
+# Year
+ggplot(data = data_sp, aes(x = Year, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "Year", y = "Fréquence d'occurrence")
+
+# Site
+ggplot(data = data_sp, aes(x = factor(Site), y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "Site", y = "Fréquence d'occurrence")
+
+# organic_matter
+ggplot(data = data_sp, aes(x = organic_matter, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "organic_matter", y = "Fréquence d'occurrence")
+
+# ilr_fines_vs_sand
+ggplot(data = data_sp, aes(x = ilr_fines_vs_sand, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "ilr_fines_vs_sand", y = "Fréquence d'occurrence")
+
+# ilr_clay_vs_silt 
+ggplot(data = data_sp, aes(x = ilr_clay_vs_silt, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "ilr_clay_vs_silt", y = "Fréquence d'occurrence")
+
+# water_level
+ggplot(data = data_sp, aes(x = water_level, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "water_level", y = "Fréquence d'occurrence")
+
+# Surface
+ggplot(data = data_sp, aes(x = log(Surface), y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "Surface", y = "Fréquence d'occurrence")
+
+# dist_trait_cote_m
+ggplot(data = data_sp, aes(x = dist_trait_cote_m, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "dist_trait_cote_m", y = "Fréquence d'occurrence")
+
+# salinity
+ggplot(data = data_sp, aes(x = salinity, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "salinity", y = "Fréquence d'occurrence")
+
+# mise_en_eau_num
+ggplot(data = data_sp, aes(x = mise_en_eau_num, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "mise_en_eau_num", y = "Fréquence d'occurrence")
+
+# duree_assec
+ggplot(data = data_sp, aes(x = duree_assec, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "duree_assec", y = "Fréquence d'occurrence")
+
+```
+
+### Modèlisation
+
+```{r}
+# Package
+library(mgcv) # à mettre dans un script a part!
+
+## Modélisation de la niche d'Althenia filiformis
+# Fit du modèle
+m_base = gam(
+  cbind(espece, 20 - espece) ~
+    # effet temporel global
+    Year +
+    
+    # structure spatiale / répétition
+    s(Site, bs = "re") +
+    s(ID_LAG, bs = "re") +
+
+    # variables écologiqes
+    s(organic_matter, k = 5) +
+    s(ilr_fines_vs_sand, k = 5) +
+    s(ilr_clay_vs_silt, k = 5) +
+    s(water_level, k = 5) +
+    s(log(Surface), k = 5) + # pas oublier de linéariser avec log()
+    s(dist_trait_cote_m, k = 5) +
+    s(salinity, k = 5) +
+    s(mise_en_eau_num, k = 5) +
+    s(duree_assec, k = 5)
+  ,
+  
+  family = binomial, # données de fréquence d'occurrence sur 20
+  method = "REML", # Restricted Maximum Likelihood [déterminer le degré de lissage des fonctions s()]
+  select = TRUE, # shrinkage [evite les smooth inutile]
+  data = data_sp
+)
+
+# Verification et validation de la relation
+# Summary [test de base du modèle : quels effets detectable]
+summary(m_base)
+
+# Note GP
+# edf = estimated degrees of freedom (= complexité de la relation)
+# edf ≈ 1 → relation essentiellement linéaire ;
+# edf > 1 → relation non linéaire ;
+# edf ≈ 0 avec select = TRUE → effet pratiquement éliminé par le shrinkage.
+
+# Gam check [le modèle est correctement spécifié ?]
+gam.check(m_base)
+
+# Note GP
+# Lire le k-index : est ce que mon k est correct? 
+## si k-index ≈ 1 → OK ;
+## si k-index < 1 + p-value faible → k trop petit?
+
+## Attention : si edf proche de k' → peut également suggérer que k est trop petit
+
+# Concurvité [comme un "test de multicollinéarité" pour un GAM]
+conc = concurvity(m_base, full = FALSE)
+round(conc$observed, 1) # regarde simplement la concurvité des données d'entrée
+
+# Note GP
+# Prédiction : la concurvité peut être relativement peu problématique
+# Interprétation des mécanismes écologiques : potentiellementtrès problématique (on ne sépare pas les effets)
+
+# Plot[plot de visualisation basique, attention ordonnée = echelle LOGIT]
+plot(m_base)
+
+
+######################## Predictions #######################################
+
+## Prediction du modèle sur une matrice adhoc
+# Création de la matrice
+newdat = data.frame(
+  salinity = seq(
+    min(data_sp$salinity, na.rm = TRUE),
+    max(data_sp$salinity, na.rm = TRUE),
+    length.out = 200
+  ),
+  organic_matter = median(data_sp$organic_matter, na.rm = TRUE),
+  ilr_fines_vs_sand = median(data_sp$ilr_fines_vs_sand, na.rm = TRUE),
+  ilr_clay_vs_silt = median(data_sp$ilr_clay_vs_silt, na.rm = TRUE),
+  water_level = median(data_sp$water_level, na.rm = TRUE),
+  Surface = median(data_sp$Surface, na.rm = TRUE),
+  dist_trait_cote_m = median(data_sp$dist_trait_cote_m, na.rm = TRUE),
+  mise_en_eau_num = median(data_sp$mise_en_eau_num, na.rm = TRUE),
+  duree_assec = median(data_sp$duree_assec, na.rm = TRUE),
+  Year = factor("2020", levels = levels(data_sp$Year))
+)
+
+# Ajoute les variables Site et ID_LAG (le predict les enlève en dessous)
+newdat$Site <- data_sp$Site[1]
+newdat$ID_LAG <- data_sp$ID_LAG[1]
+
+# Prédit les valeurs du modèle sur newdata (lien LINK pour les SE)
+p = predict(
+  m_base,
+  newdata = newdat,
+  type = "link",
+  se.fit = TRUE,
+  exclude = c("s(Site)", "s(ID_LAG)")
+)
+
+# Passe du logit à la probabilité
+newdat$fit <- plogis(p$fit) # courbe de réponse [= niche]
+newdat$lwr <- plogis(p$fit - 1.96 * p$se.fit) # IC a 95%
+newdat$upr <- plogis(p$fit + 1.96 * p$se.fit) # IC a 95%
+
+
+######################### Plot ##############################################
+# On réalise les plots
+
+# Sel [juste un plot, a adapter pour les autres variables]
+p.alth_sel = ggplot(newdat, 
+                    aes(x = salinity)) + # variable d'intérêt
+  
+  geom_line(aes(y = fit), linewidth = 1) +
+  geom_line(aes(y = lwr), linetype = "dashed") +
+  geom_line(aes(y = upr), linetype = "dashed") +
+  geom_rug(
+    data = data_sp,
+    aes(x = salinity),
+    inherit.aes = FALSE,
+    alpha = 0.25
+  ) +
+  scale_y_continuous(
+    limits = c(0, 1),
+    labels = scales::percent
+  ) +
+  labs(
+    x = "Salinity",
+    y = "Predicted frequency"
+  ) +
+  theme_classic()
+
+p.alth_sel
+  
+```
+
+### Ruppia
+
+Copier coller le code et adapter
+
+### Lamprothamnium
+
+Copier coller le code et adapter
