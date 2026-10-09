@@ -1681,8 +1681,9 @@ p.lampro_sel
 #| label: lampro-predictions
 
 # --- Paramètres---
-vars_pred_lampro <- c("organic_matter", "ilr_fines_vs_sand", "water_level",
-                    "salinity", "mise_en_eau_num", "duree_assec")
+vars_pred_lampro <- c("organic_matter", "ilr_fines_vs_sand", "ilr_clay_vs_silt",
+              "water_level", "dist_trait_cote_m", "salinity",
+              "mise_en_eau_num", "duree_assec")
 year_ref_lampro  <- "2020"   # année de référence des prédictions 
 n_pts_lampro    <- 200      # nombre de points par courbe
 
