@@ -29,7 +29,8 @@ library(pheatmap)
 library(here)        # chemins relatifs -> reproductible sur n'importe quelle machine
 library(permute)     
 library(corrplot)
-library(lme4)       
+library(lme4)
+library(scales)
 # library(comple)
 
 # ------------------------------------------------------------------
@@ -54,32 +55,49 @@ non_species <- c("algues")  # à supprimer
 env_vars <- c("organic_matter", "ilr_fines_vs_sand", "ilr_clay_vs_silt",
               "water_level", "Surface", "dist_trait_cote_m", "salinity",
               "mise_en_eau_num", "duree_assec")
+#renommer les variables environmentales pour les graphs 
+vars_env <- c(
+  salinity = "Salinity", organic_matter = "Organic matter",
+  ilr_fines_vs_sand = "Fines/Sand ratio", ilr_clay_vs_silt = "Clay/Silt ratio",
+  water_level = "Water level (cm)", Surface = "Surface (m²)",
+  dist_trait_cote_m = "Distance to coastline (m)", mise_en_eau_num = "Reflooding date (j)",
+  duree_assec = "Dry period duration (j)"
+)
+
+#commun pour le plot rda et heatmap
+abbrev_species <- function(x) {
+  parts <- strsplit(gsub("\\.", " ", x), " ")
+  sapply(parts, function(p) paste0(substr(p[1], 1, 1), ". ", paste(p[-1], collapse = " ")))
+}
 ```
 
 ```{r data-loading}
 #| label: chargement-des-donnees
 
-df_all <- read_csv(data_path, show_col_types = FALSE) %>%
-  filter(!(ID_LAG %in% outlier_lagoons))
+# import des datas, jamais modifié ensuite
+df_flore <- read_csv(data_path, show_col_types = FALSE)
 
-df_all_GP = df_all
+# objet avec colonnes d'espèces completes (avant retrait des espèces jamais observées)
+species_cols_init <- setdiff(colnames(df_flore), c(meta_cols, env_vars, non_species))
 
-# Colonnes d'espèces identifiées par noms plutôt que par position
-species_cols <- setdiff(colnames(df_all), c(meta_cols, env_vars, non_species))
+# objet avec outliers retirés + NA -> 0 (espèces seulement)
+df_all <- df_flore %>%
+  filter(!(ID_LAG %in% outlier_lagoons)) %>%
+  mutate(across(all_of(species_cols_init), ~replace_na(.x, 0)))
 
-# Absences codées NA -> 0, uniquement pour les colonnes d'espèces
-df_all <- df_all %>% mutate(across(all_of(species_cols), ~replace_na(.x, 0)))
+# objet avec species_cols défini 1 seule fois (nom distinct de species_cols_init)
+species_cols <- species_cols_init[colSums(df_all[, species_cols_init] != 0, na.rm = TRUE) > 0]
 
-# Retrait des espèces jamais observées après exclusion des lagunes outliers
-species_cols <- species_cols[colSums(df_all[, species_cols] != 0, na.rm = TRUE) > 0]
-
-# Trois sous-tableaux utilisés dans le reste du document :
 macro <- df_all %>% dplyr::select(all_of(meta_cols), all_of(species_cols))
 envir <- df_all %>% dplyr::select(all_of(meta_cols), all_of(env_vars))
 df_merged_final <- df_all %>%
   dplyr::select(all_of(meta_cols), all_of(species_cols), all_of(env_vars))
 
-cat("Sites :", nrow(macro), "| Espèces retenues :", length(species_cols), "\n")
+# objet pour les espèces communes
+especes_signif <- intersect(c("Ruppia.maritima", "Althenia.filiformis",
+                              "Lamprothamnium.papulosum"), species_cols)
+
+cat("Relevé :", nrow(macro), "| Espèces retenues :", length(species_cols), "\n")
 ```
 
 ## Article 1
@@ -88,7 +106,9 @@ cat("Sites :", nrow(macro), "| Espèces retenues :", length(species_cols), "\n")
 
 #### a) Clustering + matrice de confusion + IndVa - Composition
 
-On réalise un clustering hiérarchique **sur l'ensemble des relevés 2020 et 2025 combinés** (chaque ligne = une lagune à une date donnée, sans fusionner les deux années). La méthode d'agrégation est choisie automatiquement en comparant la corrélation cophénétique de trois méthodes usuelles. Les groupes sont définis par le clustering lui-même.
+On réalise un clustering hiérarchique sur l'ensemble des relevés 2020 et 2025 combinés (chaque ligne = une lagune à une date donnée, sans fusionner les deux années). 
+La méthode d'agrégation est choisie automatiquement en comparant la corrélation cophénétique de trois méthodes usuelles. 
+Les groupes sont définis par le clustering lui-même.
 
 ```{r cluster}
 #| label: clustering
@@ -104,12 +124,7 @@ comm_meta_all <- macro %>% dplyr::select(ID_LAG, Year)
 rownames(comm_all) <- paste(macro$ID_LAG, macro$Year, sep = "_")
 colnames(comm_all) <- gsub(" ", ".", colnames(comm_all))   # noms de colonnes utilisables comme noms R
 
-# Relevés sans aucune végétation (recouvrement total = 0 sur toutes les
-# espèces) : la distance de Bray-Curtis n'est pas définie entre deux
-# relevés vides (0/0) -> on les retire du clustering proprement dit, mais
-# on les garde de côté (comm_zero) pour leur assigner ensuite un groupe
-# commun "0 : sans végétation" plutôt que de les faire disparaître
-# silencieusement de la matrice de confusion.
+# Relevés sans aucune végétation (recouvrement total = 0 sur toutes les espèces) : la distance de Bray-Curtis n'est pas définie entre deux relevés vides (0/0) donc  on les retire du clustering proprement dit, mais on les garde de côté (comm_zero) pour leur assigner ensuite un groupe commun "0 : sans végétation" pour la matrice de conf 
 keep_rows <- rowSums(comm_all) > 0
 
 comm      <- comm_all[keep_rows, ]         # relevés végétalisés -> utilisés pour le clustering
@@ -326,7 +341,7 @@ perm_site <- how(
   nperm  = 999
 )
 cat("--- Effet Site (permutations inter-lagune) ---\n")
-adonis2(dist_bc ~ Site, data = meta_clean, permutations = perm_site, by = "margin")
+adonis2(dist_bc ~ Site, data = meta_clean, permutations = perm_site, by = "margin") #Ne peut pas fonctionner si chaque lag n'a pas le même nombre d'obs 
 ```
 
 #### c)RDA contrainte - Facteurs écologiques de la composition
@@ -424,28 +439,13 @@ vif.cca(rda_result)               # colinéarité résiduelle dans le modèle aj
 #| label: fig-rda
 #| fig-cap: "RDA (partielle, Condition = Site) espèces ~ environnement"
 
-# Noms d'espèces abrégés (genre -> initiale) pour gagner de la place,
-abbrev_species <- function(x) {
-  parts <- strsplit(gsub("\\.", " ", x), " ")
-  sapply(parts, function(p) paste0(substr(p[1], 1, 1), ". ", paste(p[-1], collapse = " ")))
-}
-rownames(r_mat)      <- abbrev_species(rownames(r_mat))
-rownames(labels_mat) <- rownames(r_mat)
-
-
 sc_site <- as.data.frame(scores(rda_result, display = "sites", scaling = 2))
 sc_sp   <- as.data.frame(scores(rda_result, display = "species", scaling = 2))
 sc_env  <- as.data.frame(scores(rda_result, display = "bp", scaling = 2))
 sc_sp$Species <- abbrev_species(rownames(sc_sp))
 
-vars_env_labels <- c(
-  salinity = "Salinity", organic_matter = "Organic matter",
-  ilr_fines_vs_sand = "Fines/Sand ratio", ilr_clay_vs_silt = "Clay/Silt ratio",
-  water_level = "Water level (cm)", Surface = "Surface (m2)",
-  dist_trait_cote_m = "Distance to coastline (m)", mise_en_eau_num = "Reflooding date (j)",
-  duree_assec = "Dry period duration (j)"
-)
-sc_env$Var <- vars_env_labels[rownames(sc_env)]
+
+sc_env$Var <- vars_env[rownames(sc_env)]   
 
 eig_pct <- summary(rda_result)$concont$importance["Proportion Explained", 1:2] * 100
 
@@ -454,11 +454,11 @@ p_rda <- ggplot() +
   geom_segment(data = sc_sp, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
                arrow = arrow(length = unit(0.25, "cm")), colour = "#009E73") +
   geom_text_repel(data = sc_sp, aes(RDA1, RDA2, label = Species), colour = "#009E73",
-                   size = 7, fontface = "bold") +        
+                   size = 7, fontface = "bold") +
   geom_segment(data = sc_env, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
                arrow = arrow(length = unit(0.25, "cm")), colour = "#E69F00") +
   geom_text_repel(data = sc_env, aes(RDA1, RDA2, label = Var), colour = "#E69F00",
-                   size = 7, fontface = "bold") +           
+                   size = 7, fontface = "bold") +
   geom_hline(yintercept = 0) + geom_vline(xintercept = 0) +
   xlab(paste0("RDA1 (", round(eig_pct[1], 1), "%)")) +
   ylab(paste0("RDA2 (", round(eig_pct[2], 1), "%)")) +
@@ -466,13 +466,12 @@ p_rda <- ggplot() +
   theme(
     panel.border = element_rect(color = "black", fill = NA),
     panel.grid   = element_blank(),
-    axis.title   = element_text(size = 18, face = "bold"),  
-    axis.text    = element_text(size = 18, face = "bold"))  
+    axis.title   = element_text(size = 18, face = "bold"),
+    axis.text    = element_text(size = 18, face = "bold"))
 
 p_rda
 
-# Ratio 16:9 (format écran) pour l'export SVG
-ggsave("figure_rda_colorblind.svg", plot = p_rda, width = 16, height = 9, units = "in")
+#ggsave("figure_rda_colorblind.svg", plot = p_rda, width = 16, height = 9, units = "in")
 ```
 
 ```{r}
@@ -500,29 +499,25 @@ stars <- ifelse(p_mat < 0.001, "***",
 labels_mat <- matrix(paste0(round(r_mat, 2), stars), nrow = nrow(r_mat),
                       dimnames = dimnames(r_mat))
 
-# Noms d'espèces abrégés (genre -> initiale) pour gagner de la place,
-abbrev_species <- function(x) {
-  parts <- strsplit(gsub("\\.", " ", x), " ")
-  sapply(parts, function(p) paste0(substr(p[1], 1, 1), ". ", paste(p[-1], collapse = " ")))
-}
-rownames(r_mat)      <- abbrev_species(rownames(r_mat))
-rownames(labels_mat) <- rownames(r_mat)
-
-# Labels des variables environnementales 
-colnames(r_mat)      <- vars_env_labels[colnames(r_mat)]
-colnames(labels_mat) <- colnames(r_mat)
+r_plot   <- r_mat
+lab_plot <- labels_mat
+rownames(r_plot)   <- abbrev_species(rownames(r_mat))
+rownames(lab_plot) <- rownames(r_plot)
+colnames(r_plot)   <- vars_env[colnames(r_mat)]     
+colnames(lab_plot) <- colnames(r_plot)
 
 heatmap_colors <- colorRampPalette(rev(RColorBrewer::brewer.pal(11, "PuOr")))(100)
 
-pheatmap(r_mat, cluster_rows = TRUE, cluster_cols = TRUE,
-         display_numbers = labels_mat,
-         fontsize_number = 10,        # taille des valeurs/étoiles dans les cases
-         fontsize = 12,                # taille de base (étiquettes lignes/colonnes)
+pheatmap(r_plot, cluster_rows = TRUE, cluster_cols = TRUE,  
+         display_numbers = lab_plot,                           
+         fontsize_number = 10,
+         fontsize = 12,
          fontsize_row = 14,
          fontsize_col = 12,
-         angle_col = 45,               # étiquettes de colonnes en oblique
+         angle_col = 45,
          color = heatmap_colors,
          breaks = seq(-1, 1, length.out = 101))
+
 ```
 
 ### 2) Spatial Hotspots of Community Change (TBI)
@@ -597,7 +592,7 @@ p_richness <- ggplot(site_wide, aes(x = mean_sp_2020, y = mean_sp_2025, color = 
 
 p_richness
 
-ggsave("figure_richesse_finale.svg", plot = p_richness, width = 6, height = 6, units = "in")
+#ggsave("figure_richesse_finale.svg", plot = p_richness, width = 6, height = 6, units = "in")
 ```
 
 #### b) TBI
@@ -607,19 +602,21 @@ Calcul du Temporal Beta-diversity Index (TBI) entre 2020 et 2025 pour chaque lag
 ```{r tbi}
 #| label: tbi
 
-macro_t1 <- macro %>% filter(Year == 2020) %>% arrange(ID_LAG)
-macro_t2 <- macro %>% filter(Year == 2025) %>% arrange(ID_LAG)
-common_ids <- intersect(macro_t1$ID_LAG, macro_t2$ID_LAG)
-macro_t1 <- macro_t1 %>% filter(ID_LAG %in% common_ids) %>% arrange(ID_LAG)
-macro_t2 <- macro_t2 %>% filter(ID_LAG %in% common_ids) %>% arrange(ID_LAG)
+macro_2020 <- macro %>% filter(Year == 2020) %>% arrange(ID_LAG)
+macro_2025 <- macro %>% filter(Year == 2025) %>% arrange(ID_LAG)
+common_ids <- intersect(macro_2020$ID_LAG, macro_2025$ID_LAG)
 
-sp_t1 <- macro_t1 %>% dplyr::select(all_of(species_cols)) %>% as.data.frame()
-sp_t2 <- macro_t2 %>% dplyr::select(all_of(species_cols)) %>% as.data.frame()
-rownames(sp_t1) <- macro_t1$ID_LAG
-rownames(sp_t2) <- macro_t2$ID_LAG
+macro_t1 <- macro_2020 %>% filter(ID_LAG %in% common_ids)
+macro_t2 <- macro_2025 %>% filter(ID_LAG %in% common_ids)
 
-keep_tbi <- which(rowSums(sp_t1) != 0 | rowSums(sp_t2) != 0)
-sp_t1 <- sp_t1[keep_tbi, ]; sp_t2 <- sp_t2[keep_tbi, ]
+sp_t1_all <- macro_t1 %>% dplyr::select(all_of(species_cols)) %>% as.data.frame()
+sp_t2_all <- macro_t2 %>% dplyr::select(all_of(species_cols)) %>% as.data.frame()
+rownames(sp_t1_all) <- macro_t1$ID_LAG
+rownames(sp_t2_all) <- macro_t2$ID_LAG
+
+keep_tbi <- which(rowSums(sp_t1_all) != 0 | rowSums(sp_t2_all) != 0)
+sp_t1 <- sp_t1_all[keep_tbi, ]     
+sp_t2 <- sp_t2_all[keep_tbi, ]
 ids_tbi <- macro_t1$ID_LAG[keep_tbi]
 
 tbi_raw <- TBI(sp_t1, sp_t2, method = "%difference", nperm = 999, test.t.perm = FALSE)
@@ -648,15 +645,15 @@ site_order <- tbi_result %>%
   arrange(desc(median_change), desc(q1_change)) %>%
   pull(Site)
 
-tbi_result <- tbi_result %>% mutate(Site = factor(Site, levels = site_order))
+tbi_plot <- tbi_result %>% mutate(Site = factor(Site, levels = site_order))
 
-p_tbi_site <- ggplot(tbi_result, aes(Site, change)) +
+p_tbi_site <- ggplot(tbi_plot, aes(Site, change)) +      
   geom_boxplot(fill = "#8ECFC9") +
   geom_jitter(width = 0.2, size = 1, alpha = 0.7, color = "grey70") +
   geom_hline(yintercept = 0, color = "grey80") +
   labs(x = "Site", y = "TBI - Total dissimilarity") +
   theme_minimal(base_size = 18) +
-  theme(axis.text = element_text(size = 18, face = "bold")) 
+  theme(axis.text = element_text(size = 18, face = "bold"))
 
 p_tbi_site
 ```
@@ -699,8 +696,8 @@ p_tbi_panel <- (p_tbi_site + p_tbi_gp) +
 
 p_tbi_panel
 
-ggsave("figure_tbi_panel_finaleV2.svg", plot = p_tbi_panel, width = 16, height = 9, units = "in")
-ggsave("figure_tbi_panel_finaleV2.png", plot = p_tbi_panel, width = 16, height = 9, units = "in")
+#ggsave("figure_tbi_panel_finaleV2.svg", plot = p_tbi_panel, width = 16, height = 9, units = "in")
+#ggsave("figure_tbi_panel_finaleV2.png", plot = p_tbi_panel, width = 16, height = 9, units = "in")
 ```
 
 On construit ensuite le tableau des variables explicatives : le Delta (2025 - 2020) de chaque variable environnementale, pour chaque lagune.
@@ -708,11 +705,11 @@ On construit ensuite le tableau des variables explicatives : le Delta (2025 - 20
 ```{r tbi-lm-data}
 #| label: tbi-lm-donnees
 
-envir_2020 <- envir %>% filter(Year == 2020) %>% drop_na() %>% arrange(ID_LAG)
-envir_2025 <- envir %>% filter(Year == 2025) %>% drop_na() %>% arrange(ID_LAG)
-common_env_ids <- intersect(envir_2020$ID_LAG, envir_2025$ID_LAG)
-envir_2020 <- envir_2020 %>% filter(ID_LAG %in% common_env_ids) %>% arrange(ID_LAG)
-envir_2025 <- envir_2025 %>% filter(ID_LAG %in% common_env_ids) %>% arrange(ID_LAG)
+envir_2020_all <- envir %>% filter(Year == 2020) %>% drop_na() %>% arrange(ID_LAG)
+envir_2025_all <- envir %>% filter(Year == 2025) %>% drop_na() %>% arrange(ID_LAG)
+common_env_ids <- intersect(envir_2020_all$ID_LAG, envir_2025_all$ID_LAG)
+envir_2020 <- envir_2020_all %>% filter(ID_LAG %in% common_env_ids)
+envir_2025 <- envir_2025_all %>% filter(ID_LAG %in% common_env_ids)
 stopifnot(identical(envir_2020$ID_LAG, envir_2025$ID_LAG))
 
 env_vars_2020 <- envir_2020 %>% dplyr::select(-all_of(meta_cols))
@@ -721,51 +718,9 @@ delta_envir <- env_vars_2025 - env_vars_2020
 delta_envir$ID_LAG <- envir_2020$ID_LAG
 
 df_model <- tbi_result %>% inner_join(delta_envir, by = "ID_LAG")
-```
 
-::: callout-note
-**Avant de modéliser : distribution du TBI et des variables Delta**
-
-Avant de choisir/valider un LM simple, on regarde la distribution brute de la variable réponse (`change`, la dissimilarité totale D) et de chaque variable explicative Delta, avec un test de normalité (Shapiro-Wilk) à titre indicatif. On regarde aussi si l'amplitude du changement (Delta) dépend du niveau moyen de la variable sur les deux dates .
-:::
-
-```{r tbi-distributions}
-#| label: tbi-distributions
-#| fig-cap: "Distribution du TBI (change) et des variables environnementales Delta"
-
-# 1. Distribution brute de la métrique réponse (D = dissimilarité totale)
-hist(df_model$change, main = "Distribution du TBI (change)", xlab = "TBI (D)")
-shapiro.test(df_model$change)   # H0 = normalité ; indicatif seulement (n petit)
-
-# 2. Distribution de chaque variable environnementale Delta (2025 - 2020)
 env_delta_names <- setdiff(colnames(delta_envir), "ID_LAG")
 
-par(mfrow = c(3, 3))
-for (v in env_delta_names) {
-  hist(delta_envir[[v]], main = v, xlab = "Delta (2025 - 2020)")
-}
-par(mfrow = c(1, 1))
-
-# 3. Delta en fonction de la moyenne (2020-2025) : détecte une éventuelle
-# dépendance entre l'ampleur du changement et le niveau moyen de la variable
-mean_envir <- (env_vars_2020 + env_vars_2025) / 2
-mean_envir$ID_LAG <- envir_2020$ID_LAG
-
-par(mfrow = c(3, 3))
-for (v in env_delta_names) {
-  plot(mean_envir[[v]], delta_envir[[v]],
-       xlab = paste("Moyenne", v), ylab = paste("Delta", v),
-       main = v, pch = 19, col = "steelblue")
-  abline(h = 0, lty = 2, col = "grey60")
-}
-par(mfrow = c(1, 1))
-```
-
-```{r}
-#| label: tbi-distributions
-#| fig-cap: "Distribution du TBI (change) et des variables environnementales Delta"
-
-# 1. Vegetation status of each paired lagoon (2020 vs 2025)
 stopifnot(identical(macro_t1$ID_LAG, macro_t2$ID_LAG))
 
 niveaux_type <- c("Compositional change",
@@ -785,7 +740,21 @@ statut_lagunes <- data.frame(
     TRUE                  ~ "No vegetation in both years"
   ), levels = niveaux_type))
 
-# 2. Attach the TBI ; lagoons empty in both years: D = 0 by convention
+ids_veg_both <- statut_lagunes %>% filter(veg_2020 & veg_2025) %>% pull(ID_LAG)
+df_model_veg <- df_model %>% filter(ID_LAG %in% ids_veg_both)
+cat("Lagoons kept for the LMs:", nrow(df_model_veg), "/", nrow(df_model), "\n")
+```
+
+::: callout-note
+**Avant de modéliser : distribution du TBI et des variables Delta**
+
+Avant de choisir/valider un LM simple, on regarde la distribution brute de la variable réponse (`change`, la dissimilarité totale D) et de chaque variable explicative Delta, avec un test de normalité (Shapiro-Wilk) à titre indicatif. On regarde aussi si l'amplitude du changement (Delta) dépend du niveau moyen de la variable sur les deux dates .
+:::
+
+```{r tbi-distributions}
+#| label: tbi-distributions
+#| fig-cap: "Distribution du TBI (change) et des variables environnementales Delta"
+
 df_hist <- statut_lagunes %>%
   left_join(tbi_result %>% dplyr::select(ID_LAG, change), by = "ID_LAG") %>%
   mutate(change = ifelse(type_changement == "No vegetation in both years", 0, change))
@@ -793,12 +762,7 @@ df_hist <- statut_lagunes %>%
 print(table(df_hist$type_changement))
 print(table(df_hist$type_changement, D_equals_1 = round(df_hist$change, 6) == 1))
 
-# 3. Dataset for the LMs: only lagoons WITH vegetation in both years
-ids_veg_both <- statut_lagunes %>% filter(veg_2020 & veg_2025) %>% pull(ID_LAG)
-df_model_veg <- df_model %>% filter(ID_LAG %in% ids_veg_both)
-cat("Lagoons kept for the LMs:", nrow(df_model_veg), "/", nrow(df_model), "\n")
-
-# 4. Normal curve parameters, fitted on "Compositional change" lagoons only
+# parametres des courbes normales fitté sur compositional changes
 val_comp   <- df_hist$change[df_hist$type_changement == "Compositional change"]
 mu_comp    <- mean(val_comp, na.rm = TRUE)
 sd_comp    <- sd(val_comp, na.rm = TRUE)
@@ -807,16 +771,14 @@ binwidth_h <- 0.05
 
 cat("Compositional change: n =", n_comp,
     "| mean =", round(mu_comp, 3), "| sd =", round(sd_comp, 3), "\n")
-shapiro.test(val_comp)   # normality of the LM response, indicative only
+shapiro.test(val_comp)
 
-# 5. Stacked histogram (compositional change at the bottom) + normal curve
 p_hist_tbi <- ggplot(df_hist, aes(change, fill = type_changement)) +
   geom_histogram(binwidth = binwidth_h, center = 0, colour = "white",
                  position = position_stack(reverse = TRUE)) +
   stat_function(fun = function(x) dnorm(x, mean = mu_comp, sd = sd_comp) * n_comp * binwidth_h,
                 colour = "#332288", linewidth = 1.2, n = 300,
                 inherit.aes = FALSE) +
-  # Paul Tol "muted" palette (colourblind-safe)
   scale_fill_manual(values = c(
     "Compositional change"          = "#44AA99",
     "Vegetation → 0 (total loss)"   = "#CC6677",
@@ -828,16 +790,12 @@ p_hist_tbi <- ggplot(df_hist, aes(change, fill = type_changement)) +
 
 p_hist_tbi
 
-# 6. Distribution of each environmental Delta variable (2025 - 2020)
-env_delta_names <- setdiff(colnames(delta_envir), "ID_LAG")
-
 par(mfrow = c(3, 3))
 for (v in env_delta_names) {
   hist(delta_envir[[v]], main = v, xlab = "Delta (2025 - 2020)")
 }
 par(mfrow = c(1, 1))
 
-# 7. Delta versus mean value (2020-2025)
 mean_envir <- (env_vars_2020 + env_vars_2025) / 2
 mean_envir$ID_LAG <- envir_2020$ID_LAG
 
@@ -948,293 +906,25 @@ ggplot(df_long, aes(Espece, Abondance, fill = factor(Year))) +
   scale_fill_manual(values = c("2020" = "#F8766D", "2025" = "#00BFC4"))
 ```
 
-### b) Univarié
 
-```{r vars-env-niche}
-#| label: vars-env-niche
-
-# Labels d'affichage des variables environnementales (repris de la section RDA)
-vars_env <- c(
-  salinity = "Salinity", organic_matter = "Organic matter",
-  ilr_fines_vs_sand = "Fines/Sand ratio", ilr_clay_vs_silt = "Clay/Silt ratio",
-  water_level = "Water level (cm)", Surface = "Surface (m²)",
-  dist_trait_cote_m = "Distance to coastline (m)", mise_en_eau_num = "Reflooding date (j)",
-  duree_assec = "Dry period duration (j)"
-)
-
-especes_signif <- c("Ruppia.maritima", "Althenia.filiformis", "Lamprothamnium.papulosum")
-especes_signif <- intersect(especes_signif, species_cols)
-```
-
-Avant de modéliser, on vérifie que le recouvrement de chaque espèce s'aligne bien sur une grille de pas ≈ 0.05 (donc sur 20 niveaux possibles, de 0/20 à 20/20), ce qui justifie le passage en comptage binomial.
-
-```{r niche-check-response}
-#| label: niche-check-reponse
-
-for (sp in especes_signif) {
-  vals <- df_merged_final[[sp]]
-  n_niveaux <- length(unique(na.omit(vals)))
-  cat(sp, ": n niveaux =", n_niveaux,
-      "| n = 0 :", sum(vals == 0, na.rm = TRUE),
-      "| n = 1 :", sum(vals == 1, na.rm = TRUE), "\n")
-}
-```
-
-```{r niche-data-prep}
-#| label: niche-data-prep
-
-n_essais <- 20   # recouvrement exprimé en pas de 0.05 -> équivalent à un ratio sur 20
-
-df_niche <- df_merged_final %>%
-  mutate(
-    Site   = factor(Site),
-    ID_LAG = factor(ID_LAG),
-    Year   = factor(Year)   # facteur à 2 niveaux : 2020 vs 2025 (plus simple à interpréter qu'un continu)
-  )
-```
-
-```{r niche-model-fit}
-#| label: niche-univariate-fit
-
-vars_all <- names(vars_env)
-
-# Un modèle par couple espèce x variable (bivarié), pas un modèle par
-# espèce avec toutes les variables en même temps : évite l'extrapolation
-# vers des combinaisons de variables jamais observées dans les données.
-fit_one <- function(sp, var) {
-  df_sp <- df_niche %>%
-    filter(complete.cases(across(c(all_of(sp), var, "Year")))) %>%
-    mutate(succes = round(.data[[sp]] * n_essais),
-           echecs = n_essais - succes,
-           x = .data[[var]])
-
-  mod_null <- glm(cbind(succes, echecs) ~ Year,             data = df_sp, family = binomial)
-  mod_lin  <- glm(cbind(succes, echecs) ~ Year + x,          data = df_sp, family = binomial)
-  mod_quad <- glm(cbind(succes, echecs) ~ Year + poly(x, 2), data = df_sp, family = binomial)
-
-  aics      <- c(null = AIC(mod_null), linear = AIC(mod_lin), quadratic = AIC(mod_quad))
-  best_form <- names(aics)[which.min(aics)]
-  best_mod  <- list(null = mod_null, linear = mod_lin, quadratic = mod_quad)[[best_form]]
-
-  list(species = sp, variable = var, df = df_sp,
-       delta_aic = as.numeric(aics["null"] - min(aics)),   # gain d'AIC vs modèle nul = "impact"
-       form = best_form, model = best_mod)
-}
-
-resultats_univaries <- list()
-for (sp in especes_signif) {
-  for (var in vars_all) {
-    resultats_univaries[[paste(sp, var, sep = "__")]] <- fit_one(sp, var)
-  }
-}
-
-tab_impact <- do.call(rbind, lapply(resultats_univaries, function(r) {
-  data.frame(species = r$species, variable = r$variable, form = r$form, delta_aic = r$delta_aic)
-})) %>% arrange(species, desc(delta_aic))
-
-tab_impact
-```
-
-```{r fig-niche-effets}
-#| label: fig-niche-univarie
-#| fig-cap: "Niche réalisée (approche univariée) : recouvrement attendu par variable, moyenné sur les deux années. Variables et ordre choisis manuellement par espèce."
-
-# Variables et ORDRE choisis manuellement, espèce par espèce
-vars_althenia <- c("water_level", "ilr_fines_vs_sand", "dist_trait_cote_m", "duree_assec")
-vars_ruppia   <- c("water_level", "ilr_fines_vs_sand", "Surface", "organic_matter")
-vars_lampro   <- c("water_level", "salinity", "dist_trait_cote_m", "organic_matter")
-
-vars_par_espece <- list(
-  "Ruppia.maritima"           = vars_ruppia,
-  "Althenia.filiformis"       = vars_althenia,
-  "Lamprothamnium.papulosum"  = vars_lampro
-)
-
-compute_curve_uni <- function(sp, var) {
-  r <- resultats_univaries[[paste(sp, var, sep = "__")]]
-  x_seq  <- seq(min(r$df$x, na.rm = TRUE), max(r$df$x, na.rm = TRUE), length.out = 200)
-  newdat <- expand.grid(x = x_seq, Year = levels(r$df$Year))
-  newdat$fit <- predict(r$model, newdata = newdat, type = "response")
-  newdat %>% group_by(x) %>% summarise(fit = mean(fit), .groups = "drop") %>%
-    mutate(species = sp, variable = var)
-}
-
-# Diagnostic : pour chaque variable choisie, rappelle si elle avait été
-# jugée "impactante" (delta_aic > 2) ou non par la sélection automatique -
-# utile pour vérifier vos choix manuels avant publication
-diag_choix <- do.call(rbind, lapply(names(vars_par_espece), function(sp) {
-  tab_impact %>% filter(species == sp, variable %in% vars_par_espece[[sp]])
-}))
-cat("Variables choisies manuellement (rappel du delta AIC associé) :\n")
-print(diag_choix)
-
-build_species_niche_uni <- function(sp, couleur) {
-  vars_sp <- vars_par_espece[[sp]]   # ordre EXACT défini manuellement ci-dessus
-
-  df_raw <- do.call(rbind, lapply(vars_sp, function(v) {
-    r <- resultats_univaries[[paste(sp, v, sep = "__")]]
-    data.frame(x = r$df$x, cover_obs = r$df[[sp]], variable = v)
-  })) %>% mutate(variable_label = factor(vars_env[variable], levels = unname(vars_env[vars_sp])))
-
-  df_pred <- do.call(rbind, lapply(vars_sp, function(v) compute_curve_uni(sp, v))) %>%
-    mutate(variable_label = factor(vars_env[variable], levels = unname(vars_env[vars_sp])))
-
-  ggplot() +
-    geom_jitter(data = df_raw, aes(x, cover_obs), height = 0.02, width = 0,
-                colour = "grey70", alpha = 0.5, size = 1) +
-    geom_line(data = df_pred, aes(x, fit), colour = couleur, linewidth = 1.3) +
-    facet_wrap(~variable_label, nrow = 1, scales = "free_x") +
-    labs(x = NULL, y = "Expected cover", title = gsub("\\.", " ", sp)) +
-    ylim(0, 1) +
-    theme_bw(base_size = 12) +
-    theme(plot.title = element_text(face = "italic", size = 13, hjust = 0))
-}
-
-p_ruppia   <- build_species_niche_uni("Ruppia.maritima", "#0072B2")
-p_althenia <- build_species_niche_uni("Althenia.filiformis", "#009E73")
-p_lampro   <- build_species_niche_uni("Lamprothamnium.papulosum", "#E69F00")
-
-p_niche_uni <- p_ruppia / p_althenia / p_lampro
-p_niche_uni
-
-#ggsave("niche_realisee_univariee.svg", plot = p_niche_uni, width = 14, height = 9, units = "in")
-```
-
-### b-bis) GAMM + selection avec "shrinkage" – ce qu'il y adéjà dans le papier (graph modifié)
-
-```{r gam-check-response}
-#| label: gam-verif-reponse
-
-# Vérifie, pour chaque espèce cible, la présence de vraies bornes à 0 ET à 1
-# -> justifie le choix d'un GAM ordinal plutôt que binomial ou bêta brute
-for (sp in especes_signif) {
-  vals <- df_merged_final[[sp]]
-  cat(sp, ": n niveaux =", length(unique(na.omit(vals))), "| n = 0 :", sum(vals == 0, na.rm = TRUE), "| n = 1 :", sum(vals == 1, na.rm = TRUE), "| n dans ]0,1[ :", sum(vals > 0 & vals < 1, na.rm = TRUE), "\n")
-}
-```
-
-```{r gam-model}
-#| label: gam-modele
-
-vars_env <- c(
-  salinity = "Salinity", organic_matter = "Organic matter",
-  ilr_fines_vs_sand = "Fines/Sand ratio", ilr_clay_vs_silt = "Clay/Silt ratio",
-  water_level = "Water level (cm)", Surface = "Surface (m²)",
-  dist_trait_cote_m = "Distance to coastline (m)", mise_en_eau_num = "Reflooding date (j)",
-  duree_assec = "Dry period duration (j)"
-)
-
-df_gam <- df_merged_final %>% mutate(Site = factor(Site))
-
-# Convertit un recouvrement continu (grille de pas ~0.05) en catégorie ordonnée
-# entière 1..R, compressée aux seuls niveaux réellement observés pour l'espèce
-# donnée. 
-to_ordinal <- function(x, step = 0.05) {
-  snapped <- round(x / step) * step
-  lv <- sort(unique(snapped))
-  list(cat = match(snapped, lv), levels = lv, R = length(lv))
-}
-
-modeles <- list()
-niveaux <- list()  # correspondance catégorie -> valeur de recouvrement, par espèce
-
-for (sp in especes_signif) {
-  df_sp <- df_gam[complete.cases(df_gam[, c(sp, names(vars_env), "Site")]), ]
-
-  ord <- to_ordinal(df_sp[[sp]])
-  df_sp$cover_cat <- ord$cat
-  niveaux[[sp]] <- ord$levels
-
-  formule <- as.formula(paste0("cover_cat ~ ",
-                                paste0("s(", names(vars_env), ", k = 5)", collapse = " + "),
-                                " + s(Site, bs = 're')"))
-  mod <- gam(formule, data = df_sp, family = ocat(R = ord$R), method = "REML", select = TRUE)
-  modeles[[sp]] <- mod
-
-  cat("\n===", sp, "( R =", ord$R, "catégories ) ===\n")
-  print(summary(mod)$s.table)
-
-  cat("\n-- gam.check --\n")
-# Les 4 graphiques de gam.check() regroupés en une seule figure 2x2 par espèce
-par(mfrow = c(2, 2), oma = c(0, 0, 2, 0))
-gam.check(mod)
-mtext(sp, side = 3, line = 0.5, outer = TRUE, font = 2, cex = 1.1)
-par(mfrow = c(1, 1), oma = c(0, 0, 0, 0))
-}
-
-summary(modeles[["Althenia.filiformis"]])$dev.expl
-summary(modeles[["Ruppia.maritima"]])$dev.expl
-summary(modeles[["Lamprothamnium.papulosum"]])$dev.expl
-```
-
-```{r gam-plots}
-#| label: fig-gam-effets
-#| fig-cap: "Recouvrement attendu par espèce (niche), effets partiels des GAM ordinaux"
-
-# Calcule les prédictions pour une combinaison espèce x variable, sur une
-# plage d'axe x COMMUNE à toutes les espèces pour cette variable (basée sur
-# l'ensemble des lagunes disponibles, pas seulement celles complètes pour
-# l'espèce en question) -- indispensable pour que les 3 courbes soient
-# directement superposables sur le même axe dans chaque facette
-compute_partiel <- function(sp, var, x_seq) {
-  mod   <- modeles[[sp]]
-  lv    <- niveaux[[sp]]  # valeurs de recouvrement correspondant à chaque catégorie
-  df_sp <- df_gam[complete.cases(df_gam[, c(sp, names(vars_env), "Site")]), ]
-
-  newdat <- as.data.frame(lapply(names(vars_env), function(v) {
-    if (v == var) x_seq else rep(median(df_sp[[v]], na.rm = TRUE), length(x_seq))
-  }))
-  names(newdat) <- names(vars_env)
-  newdat$Site <- df_sp$Site[1]
-
-  # predict.gam() avec family = ocat() renvoie une matrice n x R de
-  # probabilités prédites par catégorie -> le recouvrement ATTENDU est la
-  # moyenne pondérée par ces probabilités, ramenée sur l'échelle 0-1 d'origine
-  probs <- predict(mod, newdata = newdat, type = "response", exclude = "s(Site)")
-  expected_cover <- as.vector(probs %*% lv)
-
-  data.frame(x = x_seq, fit = expected_cover, variable = var, espece = sp)
-}
-
-pred_all <- do.call(rbind, lapply(names(vars_env), function(var) {
-  x_seq <- seq(min(df_gam[[var]], na.rm = TRUE), max(df_gam[[var]], na.rm = TRUE), length.out = 200)
-  do.call(rbind, lapply(especes_signif, compute_partiel, var = var, x_seq = x_seq))
-}))
-pred_all$variable_label <- factor(vars_env[pred_all$variable], levels = unname(vars_env))
-
-ggplot(pred_all, aes(x, fit, color = espece, linetype = espece)) +
-  geom_line(linewidth = 1) +
-  facet_wrap(~variable_label, scales = "free_x", ncol = 3) +
-  # Palette Okabe-Ito : distinguable en cas de daltonisme (deutéranopie/protanopie)
-  scale_color_manual(values = c("#009E73", "#E69F00",  "#0072B2")) +
-  scale_linetype_manual(values = c("solid", "dashed", "dotted")) +
-  labs(x = NULL, y = "Expected cover", color = "Espèce", linetype = "Espèce") +
-  ylim(0, 1) +
-  theme_bw(base_size = 10) +
-  theme(legend.position = "bottom")
-
-#ggsave("GAMM_colorblind.svg", plot = j , width = 7, height = 5,units = "in")
-```
-
-## Mise a jour : Code de Guillaume
+### b) Modèle de niches (GP)
 
 ### Formatage des données
 
 ```{r}
 
-# Formatage du fichier
-
-# A. on appelle le jeu de données depuis le chunk de chargement
-data_mod = df_all_GP
-
-# B. Mise en forme et actuvalisation des données
-data_mod = data_mod %>%
-  select("Year", "Site", "ID_LAG", # plan echantillonnage
-         "Althenia.filiformis", "Lamprothamnium.papulosum", "Ruppia.maritima", # espèces retenues
-         "organic_matter", "ilr_fines_vs_sand", "ilr_clay_vs_silt", "water_level", "Surface", "dist_trait_cote_m", "salinity", "mise_en_eau_num", "duree_assec" ) %>% # variables environementales
-  mutate (Althenia.filiformis = Althenia.filiformis * 20, # repasse les données sur 20 points contact
-  Lamprothamnium.papulosum = Lamprothamnium.papulosum * 20, 
-  Ruppia.maritima = Ruppia.maritima * 20)
+data_mod <- df_flore %>%
+  filter(!(ID_LAG %in% outlier_lagoons)) %>%
+  dplyr::select("Year", "Site", "ID_LAG",
+         "Althenia.filiformis", "Lamprothamnium.papulosum", "Ruppia.maritima",
+         "organic_matter", "ilr_fines_vs_sand", "ilr_clay_vs_silt", "water_level",
+         "Surface", "dist_trait_cote_m", "salinity", "mise_en_eau_num", "duree_assec") %>%
+ 
+  mutate(across(c(Althenia.filiformis, Lamprothamnium.papulosum, Ruppia.maritima),
+                ~replace_na(.x, 0))) %>%
+  mutate(Althenia.filiformis       = round(Althenia.filiformis * 20),
+         Lamprothamnium.papulosum  = round(Lamprothamnium.papulosum * 20),
+         Ruppia.maritima           = round(Ruppia.maritima * 20))
 
 ```
 
@@ -1242,20 +932,7 @@ data_mod = data_mod %>%
 
 ```{r}
 
-## fonction de densité basique
-vars <- c(
-  "organic_matter",
-  "ilr_fines_vs_sand",
-  "ilr_clay_vs_silt",
-  "water_level",
-  "Surface",
-  "dist_trait_cote_m",
-  "salinity",
-  "mise_en_eau_num",
-  "duree_assec"
-)
-
-for (v in vars) {
+for (v in env_vars) {   
   plot(
     density(data_mod[[v]], na.rm = TRUE),
     main = v,
@@ -1276,34 +953,22 @@ Je te laisse regarder, pour moi le plus gros problème est que surface a une lon
 #### Représenter les données avec des graphs pour chaque espèce
 
 ```{r}
-# Dataset pour une espèce
-data_sp = data_mod %>%
-  select (-c("Lamprothamnium.papulosum", "Ruppia.maritima"))
+data_alth_all <- data_mod %>%
+  dplyr::select(-c("Lamprothamnium.papulosum", "Ruppia.maritima"))
 
-# 
-data_sp %>%
+data_alth_all %>%
   group_by(ID_LAG) %>%
-  summarise(
-    n_year = n_distinct(Year),
-    .groups = "drop"
-  ) %>%
+  summarise(n_year = n_distinct(Year), .groups = "drop") %>%
   count(n_year)
 
-data_sp <- data_sp %>%
+data_alth <- data_alth_all %>%
   group_by(ID_LAG) %>%
-  mutate(
-    dif = n_distinct(Year) == 2
-  ) %>%
+  mutate(dif = n_distinct(Year) == 2) %>%
   ungroup() %>%
-  filter (dif == TRUE) %>%
-  select (-dif)
-
-# Data
-data_sp = data_sp %>% rename (espece = Althenia.filiformis)
-
-data_sp$Year = factor(data_sp$Year)
-data_sp$Site = factor(data_sp$Site)
-data_sp$ID_LAG = factor(data_sp$ID_LAG)
+  filter(dif) %>%
+  dplyr::select(-dif) %>%
+  rename(espece = Althenia.filiformis) %>%
+  mutate(Year = factor(Year), Site = factor(Site), ID_LAG = factor(ID_LAG))
 
 
 ```
@@ -1311,67 +976,67 @@ data_sp$ID_LAG = factor(data_sp$ID_LAG)
 ```{r}
 # Graph
 # Year
-ggplot(data = data_sp, aes(x = Year, y = espece)) +
+ggplot(data = data_alth, aes(x = Year, y = espece)) +
   geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
   geom_smooth(method = "loess", se = TRUE) +
   labs(x = "Year", y = "Fréquence d'occurrence")
 
 # Site
-ggplot(data = data_sp, aes(x = factor(Site), y = espece)) +
+ggplot(data = data_alth, aes(x = factor(Site), y = espece)) +
   geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
   geom_smooth(method = "loess", se = TRUE) +
   labs(x = "Site", y = "Fréquence d'occurrence")
 
 # organic_matter
-ggplot(data = data_sp, aes(x = organic_matter, y = espece)) +
+ggplot(data = data_alth, aes(x = organic_matter, y = espece)) +
   geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
   geom_smooth(method = "loess", se = TRUE) +
   labs(x = "organic_matter", y = "Fréquence d'occurrence")
 
 # ilr_fines_vs_sand
-ggplot(data = data_sp, aes(x = ilr_fines_vs_sand, y = espece)) +
+ggplot(data = data_alth, aes(x = ilr_fines_vs_sand, y = espece)) +
   geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
   geom_smooth(method = "loess", se = TRUE) +
   labs(x = "ilr_fines_vs_sand", y = "Fréquence d'occurrence")
 
 # ilr_clay_vs_silt 
-ggplot(data = data_sp, aes(x = ilr_clay_vs_silt, y = espece)) +
+ggplot(data = data_alth, aes(x = ilr_clay_vs_silt, y = espece)) +
   geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
   geom_smooth(method = "loess", se = TRUE) +
   labs(x = "ilr_clay_vs_silt", y = "Fréquence d'occurrence")
 
 # water_level
-ggplot(data = data_sp, aes(x = water_level, y = espece)) +
+ggplot(data = data_alth, aes(x = water_level, y = espece)) +
   geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
   geom_smooth(method = "loess", se = TRUE) +
   labs(x = "water_level", y = "Fréquence d'occurrence")
 
 # Surface
-ggplot(data = data_sp, aes(x = log(Surface), y = espece)) +
+ggplot(data = data_alth, aes(x = log(Surface), y = espece)) +
   geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
   geom_smooth(method = "loess", se = TRUE) +
   labs(x = "Surface", y = "Fréquence d'occurrence")
 
 # dist_trait_cote_m
-ggplot(data = data_sp, aes(x = dist_trait_cote_m, y = espece)) +
+ggplot(data = data_alth, aes(x = dist_trait_cote_m, y = espece)) +
   geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
   geom_smooth(method = "loess", se = TRUE) +
   labs(x = "dist_trait_cote_m", y = "Fréquence d'occurrence")
 
 # salinity
-ggplot(data = data_sp, aes(x = salinity, y = espece)) +
+ggplot(data = data_alth, aes(x = salinity, y = espece)) +
   geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
   geom_smooth(method = "loess", se = TRUE) +
   labs(x = "salinity", y = "Fréquence d'occurrence")
 
 # mise_en_eau_num
-ggplot(data = data_sp, aes(x = mise_en_eau_num, y = espece)) +
+ggplot(data = data_alth, aes(x = mise_en_eau_num, y = espece)) +
   geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
   geom_smooth(method = "loess", se = TRUE) +
   labs(x = "mise_en_eau_num", y = "Fréquence d'occurrence")
 
 # duree_assec
-ggplot(data = data_sp, aes(x = duree_assec, y = espece)) +
+ggplot(data = data_alth, aes(x = duree_assec, y = espece)) +
   geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
   geom_smooth(method = "loess", se = TRUE) +
   labs(x = "duree_assec", y = "Fréquence d'occurrence")
@@ -1381,12 +1046,10 @@ ggplot(data = data_sp, aes(x = duree_assec, y = espece)) +
 ### Modèlisation
 
 ```{r}
-# Package
-library(mgcv) # à mettre dans un script a part!
 
 ## Modélisation de la niche d'Althenia filiformis
 # Fit du modèle
-m_base = gam(
+m_alth = gam(
   cbind(espece, 20 - espece) ~
     # effet temporel global
     Year +
@@ -1410,12 +1073,12 @@ m_base = gam(
   family = binomial, # données de fréquence d'occurrence sur 20
   method = "REML", # Restricted Maximum Likelihood [déterminer le degré de lissage des fonctions s()]
   select = TRUE, # shrinkage [evite les smooth inutile]
-  data = data_sp
+  data = data_alth
 )
 
 # Verification et validation de la relation
 # Summary [test de base du modèle : quels effets detectable]
-summary(m_base)
+summary(m_alth)
 
 # Note GP
 # edf = estimated degrees of freedom (= complexité de la relation)
@@ -1424,7 +1087,7 @@ summary(m_base)
 # edf ≈ 0 avec select = TRUE → effet pratiquement éliminé par le shrinkage.
 
 # Gam check [le modèle est correctement spécifié ?]
-gam.check(m_base)
+gam.check(m_alth)
 
 # Note GP
 # Lire le k-index : est ce que mon k est correct? 
@@ -1434,7 +1097,7 @@ gam.check(m_base)
 ## Attention : si edf proche de k' → peut également suggérer que k est trop petit
 
 # Concurvité [comme un "test de multicollinéarité" pour un GAM]
-conc = concurvity(m_base, full = FALSE)
+conc = concurvity(m_alth, full = FALSE)
 round(conc$observed, 1) # regarde simplement la concurvité des données d'entrée
 
 # Note GP
@@ -1442,61 +1105,561 @@ round(conc$observed, 1) # regarde simplement la concurvité des données d'entr�
 # Interprétation des mécanismes écologiques : potentiellementtrès problématique (on ne sépare pas les effets)
 
 # Plot[plot de visualisation basique, attention ordonnée = echelle LOGIT]
-plot(m_base)
+plot(m_alth)
+
+```
+
+```{r}
+#| label: alth-predictions
+
+# --- Paramètres---
+vars_pred_alth <- c("organic_matter", "ilr_fines_vs_sand", "water_level",
+                    "salinity", "mise_en_eau_num", "duree_assec")
+year_ref_alth  <- "2020"   # année de référence des prédictions 
+n_pts_alth     <- 200      # nombre de points par courbe
+
+# --- Valeurs de référence : médiane de TOUTES les variables environnementales du modèle ---
+med_alth <- sapply(data_alth[, env_vars], median, na.rm = TRUE)
+
+# --- Fonction : courbe de niche pour UNE variable, les 8 autres fixées à leur médiane ---
+predict_curve_alth <- function(var, model = m_alth, data = data_alth) {
+
+  # Grille de la variable d'intérêt, sur son étendue observée
+  x_seq <- seq(min(data[[var]], na.rm = TRUE),
+               max(data[[var]], na.rm = TRUE),
+               length.out = n_pts_alth)
+
+  # Table de prédiction
+  nd_alth <- as.data.frame(as.list(med_alth))[rep(1, n_pts_alth), ]
+  rownames(nd_alth) <- NULL
+  nd_alth[[var]] <- x_seq
+
+  # Variables du design : Year fixé, Site/ID_LAG arbitraires 
+  nd_alth$Year   <- factor(year_ref_alth, levels = levels(data$Year))
+  nd_alth$Site   <- data$Site[1]
+  nd_alth$ID_LAG <- data$ID_LAG[1]
+
+  # Prédiction sur l'échelle du lien (logit) pour avoir les erreurs standard
+  pr_alth <- predict(model, newdata = nd_alth, type = "link", se.fit = TRUE,
+                     exclude = c("s(Site)", "s(ID_LAG)"))
+
+  # Retour à l'échelle de probabilité : courbe + IC à 95 %
+  data.frame(
+    variable = var,
+    x   = x_seq,
+    fit = plogis(pr_alth$fit),
+    lwr = plogis(pr_alth$fit - 1.96 * pr_alth$se.fit),
+    upr = plogis(pr_alth$fit + 1.96 * pr_alth$se.fit)
+  )
+}
+
+# --- Boucle sur toutes les variables : un seul tableau en format long ---
+pred_alth <- do.call(rbind, lapply(vars_pred_alth, predict_curve_alth))
+
+pred_alth$variable_label <- factor(vars_env[pred_alth$variable],
+                                   levels = unname(vars_env[vars_pred_alth]))
+
+# --- Observations brutes pour le "rug" (format long) ---
+rug_alth <- data_alth %>%
+  dplyr::select(all_of(vars_pred_alth)) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "x") %>%
+  drop_na() %>%
+  mutate(variable_label = factor(vars_env[variable], levels = unname(vars_env[vars_pred_alth])))
+```
+
+```{r}
+#| label: alth-plots
+
+# --- A. Figure composite : une facette par variable ---
+p_alth_panel <- ggplot(pred_alth, aes(x, fit)) +
+  geom_line(linewidth = 1) +
+  geom_line(aes(y = lwr), linetype = "dashed") +      # IC 95 % inférieur
+  geom_line(aes(y = upr), linetype = "dashed") +      # IC 95 % supérieur
+  geom_rug(data = rug_alth, aes(x = x), inherit.aes = FALSE, alpha = 0.25) +
+  facet_wrap(~variable_label, scales = "free_x", ncol = 3) +
+  scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+  labs(x = NULL, y = "Predicted frequency") +
+  theme_classic()
+
+p_alth_panel
+
+# --- B. Un graphique individuel par variable, rangés dans une liste nommée ---
+p_alth_list <- lapply(vars_pred_alth, function(v) {
+  ggplot(dplyr::filter(pred_alth, variable == v), aes(x, fit)) +
+    geom_line(linewidth = 1) +
+    geom_line(aes(y = lwr), linetype = "dashed") +
+    geom_line(aes(y = upr), linetype = "dashed") +
+    geom_rug(data = dplyr::filter(rug_alth, variable == v), aes(x = x),
+             inherit.aes = FALSE, alpha = 0.25) +
+    scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+    labs(x = unname(vars_env[v]), y = "Predicted frequency") +
+    theme_classic()
+})
+names(p_alth_list) <- vars_pred_alth
+
+p_alth_list$salinity   # exemple : accès à un graphique individuel
+
+# ggsave("alth_panel.svg", plot = p_alth_panel, width = 12, height = 7, units = "in")
+# ggsave("alth_salinity.svg", plot = p_alth_list$salinity, width = 5, height = 4, units = "in")
+```
+
+### Ruppia
+#### Représenter les données avec des graphs pour chaque espèce
+
+```{r}
+data_rup_all <- data_mod %>%
+  dplyr::select(-c("Lamprothamnium.papulosum", "Althenia.filiformis"))
+
+data_rup_all %>%
+  group_by(ID_LAG) %>%
+  summarise(n_year = n_distinct(Year), .groups = "drop") %>%
+  count(n_year)
+
+data_rup <- data_rup_all %>%
+  group_by(ID_LAG) %>%
+  mutate(dif = n_distinct(Year) == 2) %>%
+  ungroup() %>%
+  filter(dif) %>%
+  dplyr::select(-dif) %>%
+  rename(espece = Ruppia.maritima) %>%
+  mutate(Year = factor(Year), Site = factor(Site), ID_LAG = factor(ID_LAG))
+
+```
+```{r}
+# Graph
+# Year
+ggplot(data = data_rup, aes(x = Year, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "Year", y = "Fréquence d'occurrence")
+
+# Site
+ggplot(data = data_rup, aes(x = factor(Site), y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "Site", y = "Fréquence d'occurrence")
+
+# organic_matter
+ggplot(data = data_rup, aes(x = organic_matter, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "organic_matter", y = "Fréquence d'occurrence")
+
+# ilr_fines_vs_sand
+ggplot(data = data_rup, aes(x = ilr_fines_vs_sand, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "ilr_fines_vs_sand", y = "Fréquence d'occurrence")
+
+# ilr_clay_vs_silt 
+ggplot(data = data_rup, aes(x = ilr_clay_vs_silt, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "ilr_clay_vs_silt", y = "Fréquence d'occurrence")
+
+# water_level
+ggplot(data = data_rup, aes(x = water_level, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "water_level", y = "Fréquence d'occurrence")
+
+# Surface
+ggplot(data = data_rup, aes(x = log(Surface), y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "Surface", y = "Fréquence d'occurrence")
+
+# dist_trait_cote_m
+ggplot(data = data_rup, aes(x = dist_trait_cote_m, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "dist_trait_cote_m", y = "Fréquence d'occurrence")
+
+# salinity
+ggplot(data = data_rup, aes(x = salinity, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "salinity", y = "Fréquence d'occurrence")
+
+# mise_en_eau_num
+ggplot(data = data_rup, aes(x = mise_en_eau_num, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "mise_en_eau_num", y = "Fréquence d'occurrence")
+
+# duree_assec
+ggplot(data = data_rup, aes(x = duree_assec, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "duree_assec", y = "Fréquence d'occurrence")
+
+```
+###Modélisation Ruppia 
+```{r}
+## Modélisation de la niche d'Althenia filiformis
+# Fit du modèle
+m_rup = gam(
+  cbind(espece, 20 - espece) ~
+    # effet temporel global
+    Year +
+    
+    # structure spatiale / répétition
+    s(Site, bs = "re") +
+    s(ID_LAG, bs = "re") +
+
+    # variables écologiqes
+    s(organic_matter, k = 5) +
+    s(ilr_fines_vs_sand, k = 5) +
+    s(ilr_clay_vs_silt, k = 5) +
+    s(water_level, k = 5) +
+    s(log(Surface), k = 5) + # pas oublier de linéariser avec log()
+    s(dist_trait_cote_m, k = 5) +
+    s(salinity, k = 5) +
+    s(mise_en_eau_num, k = 5) +
+    s(duree_assec, k = 5)
+  ,
+  
+  family = binomial, # données de fréquence d'occurrence sur 20
+  method = "REML", # Restricted Maximum Likelihood [déterminer le degré de lissage des fonctions s()]
+  select = TRUE, # shrinkage [evite les smooth inutile]
+  data = data_rup
+)
+
+# Verification et validation de la relation
+# Summary [test de base du modèle : quels effets detectable]
+summary(m_rup)
+
+# Note GP
+# edf = estimated degrees of freedom (= complexité de la relation)
+# edf ≈ 1 → relation essentiellement linéaire ;
+# edf > 1 → relation non linéaire ;
+# edf ≈ 0 avec select = TRUE → effet pratiquement éliminé par le shrinkage.
+
+# Gam check [le modèle est correctement spécifié ?]
+gam.check(m_rup)
+
+# Note GP
+# Lire le k-index : est ce que mon k est correct? 
+## si k-index ≈ 1 → OK ;
+## si k-index < 1 + p-value faible → k trop petit?
+
+## Attention : si edf proche de k' → peut également suggérer que k est trop petit
+
+# Concurvité [comme un "test de multicollinéarité" pour un GAM]
+conc = concurvity(m_rup, full = FALSE)
+round(conc$observed, 1) # regarde simplement la concurvité des données d'entrée
+
+# Note GP
+# Prédiction : la concurvité peut être relativement peu problématique
+# Interprétation des mécanismes écologiques : potentiellementtrès problématique (on ne sépare pas les effets)
+
+# Plot[plot de visualisation basique, attention ordonnée = echelle LOGIT]
+plot(m_rup)
+
+```
+```{r}
+#| label: rup-predictions
+
+# --- Paramètres---
+vars_pred_rup <- c("organic_matter", "ilr_fines_vs_sand", "water_level",
+                    "salinity", "mise_en_eau_num", "duree_assec")
+year_ref_rup  <- "2020"   # année de référence des prédictions 
+n_pts_rup     <- 200      # nombre de points par courbe
+
+# --- Valeurs de référence : médiane de TOUTES les variables environnementales du modèle ---
+med_rup <- sapply(data_rup[, env_vars], median, na.rm = TRUE)
+
+# --- Fonction : courbe de niche pour UNE variable, les 8 autres fixées à leur médiane ---
+predict_curve_rup <- function(var, model = m_rup, data = data_rup) {
+
+  # Grille de la variable d'intérêt, sur son étendue observée
+  x_seq <- seq(min(data[[var]], na.rm = TRUE),
+               max(data[[var]], na.rm = TRUE),
+               length.out = n_pts_rup)
+
+  # Table de prédiction
+  nd_rup <- as.data.frame(as.list(med_rup))[rep(1, n_pts_rup), ]
+  rownames(nd_rup) <- NULL
+  nd_rup[[var]] <- x_seq
+
+  # Variables du design : Year fixé, Site/ID_LAG arbitraires 
+  nd_rup$Year   <- factor(year_ref_rup, levels = levels(data$Year))
+  nd_rup$Site   <- data$Site[1]
+  nd_rup$ID_LAG <- data$ID_LAG[1]
+
+  # Prédiction sur l'échelle du lien (logit) pour avoir les erreurs standard
+  pr_rup <- predict(model, newdata = nd_rup, type = "link", se.fit = TRUE,
+                     exclude = c("s(Site)", "s(ID_LAG)"))
+
+  # Retour à l'échelle de probabilité : courbe + IC à 95 %
+  data.frame(
+    variable = var,
+    x   = x_seq,
+    fit = plogis(pr_rup$fit),
+    lwr = plogis(pr_rup$fit - 1.96 * pr_rup$se.fit),
+    upr = plogis(pr_rup$fit + 1.96 * pr_rup$se.fit)
+  )
+}
+
+# --- Boucle sur toutes les variables : un seul tableau en format long ---
+pred_rup <- do.call(rbind, lapply(vars_pred_rup, predict_curve_rup))
+
+pred_rup$variable_label <- factor(vars_env[pred_rup$variable],
+                                   levels = unname(vars_env[vars_pred_rup]))
+
+# --- Observations brutes pour le "rug" (format long) ---
+rug_rup <- data_rup %>%
+  dplyr::select(all_of(vars_pred_rup)) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "x") %>%
+  drop_na() %>%
+  mutate(variable_label = factor(vars_env[variable], levels = unname(vars_env[vars_pred_rup])))
+```
+
+```{r}
+#| label: rup-plots
+
+# --- A. Figure composite : une facette par variable ---
+p_rup_panel <- ggplot(pred_rup, aes(x, fit)) +
+  geom_line(linewidth = 1) +
+  geom_line(aes(y = lwr), linetype = "dashed") +      # IC 95 % inférieur
+  geom_line(aes(y = upr), linetype = "dashed") +      # IC 95 % supérieur
+  geom_rug(data = rug_rup, aes(x = x), inherit.aes = FALSE, alpha = 0.25) +
+  facet_wrap(~variable_label, scales = "free_x", ncol = 3) +
+  scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+  labs(x = NULL, y = "Predicted frequency") +
+  theme_classic()
+
+p_rup_panel
+
+# --- B. Un graphique individuel par variable, rangés dans une liste nommée ---
+p_rup_list <- lapply(vars_pred_rup, function(v) {
+  ggplot(dplyr::filter(pred_rup, variable == v), aes(x, fit)) +
+    geom_line(linewidth = 1) +
+    geom_line(aes(y = lwr), linetype = "dashed") +
+    geom_line(aes(y = upr), linetype = "dashed") +
+    geom_rug(data = dplyr::filter(rug_rup, variable == v), aes(x = x),
+             inherit.aes = FALSE, alpha = 0.25) +
+    scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+    labs(x = unname(vars_env[v]), y = "Predicted frequency") +
+    theme_classic()
+})
+names(p_rup_list) <- vars_pred_rup
+
+p_rup_list$salinity   # exemple : accès à un graphique individuel
+
+# ggsave("rup_panel.svg", plot = p_rup_panel, width = 12, height = 7, units = "in")
+# ggsave("rup_salinity.svg", plot = p_rup_list$salinity, width = 5, height = 4, units = "in")
+```
+
+
+### Lamprothamnium
+
+#### Représenter les données avec des graphs pour chaque espèce
+
+```{r}
+data_lampro_all <- data_mod %>%
+  dplyr::select(-c("Ruppia.maritima", "Althenia.filiformis"))
+
+data_lampro_all %>%
+  group_by(ID_LAG) %>%
+  summarise(n_year = n_distinct(Year), .groups = "drop") %>%
+  count(n_year)
+
+data_lampro <- data_lampro_all %>%
+  group_by(ID_LAG) %>%
+  mutate(dif = n_distinct(Year) == 2) %>%
+  ungroup() %>%
+  filter(dif) %>%
+  dplyr::select(-dif) %>%
+  rename(espece = Lamprothamnium.papulosum) %>%
+  mutate(Year = factor(Year), Site = factor(Site), ID_LAG = factor(ID_LAG))
+
+```
+
+```{r}
+# Graph
+# Year
+ggplot(data = data_lampro, aes(x = Year, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "Year", y = "Fréquence d'occurrence")
+
+# Site
+ggplot(data = data_lampro, aes(x = factor(Site), y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "Site", y = "Fréquence d'occurrence")
+
+# organic_matter
+ggplot(data = data_lampro, aes(x = organic_matter, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "organic_matter", y = "Fréquence d'occurrence")
+
+# ilr_fines_vs_sand
+ggplot(data = data_lampro, aes(x = ilr_fines_vs_sand, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "ilr_fines_vs_sand", y = "Fréquence d'occurrence")
+
+# ilr_clay_vs_silt 
+ggplot(data = data_lampro, aes(x = ilr_clay_vs_silt, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "ilr_clay_vs_silt", y = "Fréquence d'occurrence")
+
+# water_level
+ggplot(data = data_lampro, aes(x = water_level, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "water_level", y = "Fréquence d'occurrence")
+
+# Surface
+ggplot(data = data_lampro, aes(x = log(Surface), y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "Surface", y = "Fréquence d'occurrence")
+
+# dist_trait_cote_m
+ggplot(data = data_lampro, aes(x = dist_trait_cote_m, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "dist_trait_cote_m", y = "Fréquence d'occurrence")
+
+# salinity
+ggplot(data = data_lampro, aes(x = salinity, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "salinity", y = "Fréquence d'occurrence")
+
+# mise_en_eau_num
+ggplot(data = data_lampro, aes(x = mise_en_eau_num, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "mise_en_eau_num", y = "Fréquence d'occurrence")
+
+# duree_assec
+ggplot(data = data_lampro, aes(x = duree_assec, y = espece)) +
+  geom_jitter(width = 0, height = 0.02, alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "duree_assec", y = "Fréquence d'occurrence")
+
+```
+
+```{r}
+## Modélisation de la niche d'Althenia filiformis
+# Fit du modèle
+m_lampro= gam(
+  cbind(espece, 20 - espece) ~
+    # effet temporel global
+    Year +
+    
+    # structure spatiale / répétition
+    s(Site, bs = "re") +
+    s(ID_LAG, bs = "re") +
+
+    # variables écologiqes
+    s(organic_matter, k = 5) +
+    s(ilr_fines_vs_sand, k = 5) +
+    s(ilr_clay_vs_silt, k = 5) +
+    s(water_level, k = 5) +
+    s(log(Surface), k = 5) + # pas oublier de linéariser avec log()
+    s(dist_trait_cote_m, k = 5) +
+    s(salinity, k = 5) +
+    s(mise_en_eau_num, k = 5) +
+    s(duree_assec, k = 5)
+  ,
+  
+  family = binomial, # données de fréquence d'occurrence sur 20
+  method = "REML", # Restricted Maximum Likelihood [déterminer le degré de lissage des fonctions s()]
+  select = TRUE, # shrinkage [evite les smooth inutile]
+  data = data_lampro
+)
+
+# Verification et validation de la relation
+# Summary [test de base du modèle : quels effets detectable]
+summary(m_lampro)
+
+# Note GP
+# edf = estimated degrees of freedom (= complexité de la relation)
+# edf ≈ 1 → relation essentiellement linéaire ;
+# edf > 1 → relation non linéaire ;
+# edf ≈ 0 avec select = TRUE → effet pratiquement éliminé par le shrinkage.
+
+# Gam check [le modèle est correctement spécifié ?]
+gam.check(m_lampro)
+
+# Note GP
+# Lire le k-index : est ce que mon k est correct? 
+## si k-index ≈ 1 → OK ;
+## si k-index < 1 + p-value faible → k trop petit?
+
+## Attention : si edf proche de k' → peut également suggérer que k est trop petit
+
+# Concurvité [comme un "test de multicollinéarité" pour un GAM]
+conc = concurvity(m_lampro, full = FALSE)
+round(conc$observed, 1) # regarde simplement la concurvité des données d'entrée
+
+# Note GP
+# Prédiction : la concurvité peut être relativement peu problématique
+# Interprétation des mécanismes écologiques : potentiellementtrès problématique (on ne sépare pas les effets)
+
+# Plot[plot de visualisation basique, attention ordonnée = echelle LOGIT]
+plot(m_lampro)
 
 
 ######################## Predictions #######################################
 
 ## Prediction du modèle sur une matrice adhoc
 # Création de la matrice
-newdat = data.frame(
+newdat_lampro = data.frame(
   salinity = seq(
-    min(data_sp$salinity, na.rm = TRUE),
-    max(data_sp$salinity, na.rm = TRUE),
+    min(data_lampro$salinity, na.rm = TRUE),
+    max(data_lampro$salinity, na.rm = TRUE),
     length.out = 200
   ),
-  organic_matter = median(data_sp$organic_matter, na.rm = TRUE),
-  ilr_fines_vs_sand = median(data_sp$ilr_fines_vs_sand, na.rm = TRUE),
-  ilr_clay_vs_silt = median(data_sp$ilr_clay_vs_silt, na.rm = TRUE),
-  water_level = median(data_sp$water_level, na.rm = TRUE),
-  Surface = median(data_sp$Surface, na.rm = TRUE),
-  dist_trait_cote_m = median(data_sp$dist_trait_cote_m, na.rm = TRUE),
-  mise_en_eau_num = median(data_sp$mise_en_eau_num, na.rm = TRUE),
-  duree_assec = median(data_sp$duree_assec, na.rm = TRUE),
-  Year = factor("2020", levels = levels(data_sp$Year))
+  organic_matter = median(data_lampro$organic_matter, na.rm = TRUE),
+  ilr_fines_vs_sand = median(data_lampro$ilr_fines_vs_sand, na.rm = TRUE),
+  ilr_clay_vs_silt = median(data_lampro$ilr_clay_vs_silt, na.rm = TRUE),
+  water_level = median(data_lampro$water_level, na.rm = TRUE),
+  Surface = median(data_lampro$Surface, na.rm = TRUE),
+  dist_trait_cote_m = median(data_lampro$dist_trait_cote_m, na.rm = TRUE),
+  mise_en_eau_num = median(data_alth$mise_en_eau_num, na.rm = TRUE),
+  duree_assec = median(data_lampro$duree_assec, na.rm = TRUE),
+  Year = factor("2020", levels = levels(data_lampro$Year))
 )
 
 # Ajoute les variables Site et ID_LAG (le predict les enlève en dessous)
-newdat$Site <- data_sp$Site[1]
-newdat$ID_LAG <- data_sp$ID_LAG[1]
+newdat_lampro$Site <- data_lampro$Site[1]
+newdat_lampro$ID_LAG <- data_lampro$ID_LAG[1]
 
 # Prédit les valeurs du modèle sur newdata (lien LINK pour les SE)
 p = predict(
-  m_base,
-  newdata = newdat,
+  m_lampro,
+  newdata = newdat_lampro,
   type = "link",
   se.fit = TRUE,
   exclude = c("s(Site)", "s(ID_LAG)")
 )
 
 # Passe du logit à la probabilité
-newdat$fit <- plogis(p$fit) # courbe de réponse [= niche]
-newdat$lwr <- plogis(p$fit - 1.96 * p$se.fit) # IC a 95%
-newdat$upr <- plogis(p$fit + 1.96 * p$se.fit) # IC a 95%
+newdat_lampro$fit <- plogis(p$fit) # courbe de réponse [= niche]
+newdat_lampro$lwr <- plogis(p$fit - 1.96 * p$se.fit) # IC a 95%
+newdat_lampro$upr <- plogis(p$fit + 1.96 * p$se.fit) # IC a 95%
 
 
 ######################### Plot ##############################################
 # On réalise les plots
 
 # Sel [juste un plot, a adapter pour les autres variables]
-p.alth_sel = ggplot(newdat, 
+p.lampro_sel = ggplot(newdat_lampro, 
                     aes(x = salinity)) + # variable d'intérêt
   
   geom_line(aes(y = fit), linewidth = 1) +
   geom_line(aes(y = lwr), linetype = "dashed") +
   geom_line(aes(y = upr), linetype = "dashed") +
   geom_rug(
-    data = data_sp,
+    data = data_alth,
     aes(x = salinity),
     inherit.aes = FALSE,
     alpha = 0.25
@@ -1511,14 +1674,100 @@ p.alth_sel = ggplot(newdat,
   ) +
   theme_classic()
 
-p.alth_sel
-  
+p.lampro_sel
 ```
 
-### Ruppia
+```{r}
+#| label: lampro-predictions
 
-Copier coller le code et adapter
+# --- Paramètres---
+vars_pred_lampro <- c("organic_matter", "ilr_fines_vs_sand", "water_level",
+                    "salinity", "mise_en_eau_num", "duree_assec")
+year_ref_lampro  <- "2020"   # année de référence des prédictions 
+n_pts_lampro    <- 200      # nombre de points par courbe
 
-### Lamprothamnium
+# --- Valeurs de référence : médiane de TOUTES les variables environnementales du modèle ---
+med_lampro <- sapply(data_lampro[, env_vars], median, na.rm = TRUE)
 
-Copier coller le code et adapter
+# --- Fonction : courbe de niche pour UNE variable, les 8 autres fixées à leur médiane ---
+predict_curve_lampro <- function(var, model = m_lampro, data = data_lampro) {
+
+  # Grille de la variable d'intérêt, sur son étendue observée
+  x_seq <- seq(min(data[[var]], na.rm = TRUE),
+               max(data[[var]], na.rm = TRUE),
+               length.out = n_pts_rup)
+
+  # Table de prédiction
+  nd_lampro <- as.data.frame(as.list(med_lampro))[rep(1, n_pts_lampro), ]
+  rownames(nd_lampro) <- NULL
+  nd_lampro[[var]] <- x_seq
+
+  # Variables du design : Year fixé, Site/ID_LAG arbitraires 
+  nd_lampro$Year   <- factor(year_ref_lampro, levels = levels(data$Year))
+  nd_lampro$Site   <- data$Site[1]
+  nd_lampro$ID_LAG <- data$ID_LAG[1]
+
+  # Prédiction sur l'échelle du lien (logit) pour avoir les erreurs standard
+  pr_lampro <- predict(model, newdata = nd_lampro, type = "link", se.fit = TRUE,
+                     exclude = c("s(Site)", "s(ID_LAG)"))
+
+  # Retour à l'échelle de probabilité : courbe + IC à 95 %
+  data.frame(
+    variable = var,
+    x   = x_seq,
+    fit = plogis(pr_lampro$fit),
+    lwr = plogis(pr_lampro$fit - 1.96 * pr_lampro$se.fit),
+    upr = plogis(pr_lampro$fit + 1.96 * pr_lampro$se.fit)
+  )
+}
+
+# --- Boucle sur toutes les variables : un seul tableau en format long ---
+pred_lampro <- do.call(rbind, lapply(vars_pred_lampro, predict_curve_lampro))
+
+pred_lampro$variable_label <- factor(vars_env[pred_lampro$variable],
+                                   levels = unname(vars_env[vars_pred_lampro]))
+
+# --- Observations brutes pour le "rug" (format long) ---
+rug_lampro <- data_lampro %>%
+  dplyr::select(all_of(vars_pred_lampro)) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "x") %>%
+  drop_na() %>%
+  mutate(variable_label = factor(vars_env[variable], levels = unname(vars_env[vars_pred_lampro])))
+```
+
+```{r}
+#| label: lampro-plots
+
+# --- A. Figure composite : une facette par variable ---
+p_lampro_panel <- ggplot(pred_lampro, aes(x, fit)) +
+  geom_line(linewidth = 1) +
+  geom_line(aes(y = lwr), linetype = "dashed") +      # IC 95 % inférieur
+  geom_line(aes(y = upr), linetype = "dashed") +      # IC 95 % supérieur
+  geom_rug(data = rug_lampro, aes(x = x), inherit.aes = FALSE, alpha = 0.25) +
+  facet_wrap(~variable_label, scales = "free_x", ncol = 3) +
+  scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+  labs(x = NULL, y = "Predicted frequency") +
+  theme_classic()
+
+p_lampro_panel
+
+# --- B. Un graphique individuel par variable, rangés dans une liste nommée ---
+p_lampro_list <- lapply(vars_pred_lampro, function(v) {
+  ggplot(dplyr::filter(pred_lampro, variable == v), aes(x, fit)) +
+    geom_line(linewidth = 1) +
+    geom_line(aes(y = lwr), linetype = "dashed") +
+    geom_line(aes(y = upr), linetype = "dashed") +
+    geom_rug(data = dplyr::filter(rug_lampro, variable == v), aes(x = x),
+             inherit.aes = FALSE, alpha = 0.25) +
+    scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+    labs(x = unname(vars_env[v]), y = "Predicted frequency") +
+    theme_classic()
+})
+names(p_lampro_list) <- vars_pred_lampro
+
+p_lampro_list$salinity   # exemple : accès à un graphique individuel
+
+# ggsave("lampro_panel.svg", plot = p_lampro_panel, width = 12, height = 7, units = "in")
+# ggsave("lampro_salinity.svg", plot = p_lampro_list$salinity, width = 5, height = 4, units = "in")
+```
+
