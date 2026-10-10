@@ -340,10 +340,6 @@ Macro_Ptscontacts_2020$LAGUNE = gsub("_(\\d{2})$", "_\\1", Macro_Ptscontacts_202
 Macro_Ptscontacts_2020$LAGUNE = gsub("FOS_CAB", "FOS_REL", Macro_Ptscontacts_2020$LAGUNE) # Remplacer FOS_CAB par FOS_REL dans la colonne LAGUNE
 Macro_Ptscontacts_2020$LAGUNE = gsub("BAG_GRA", "BAG_PET", Macro_Ptscontacts_2020$LAGUNE)
 
-###  Data 2023
-
-
-
 
 ###  Data 2025 ----
 getwd()
@@ -460,6 +456,43 @@ Macro_Ptscontacts = Macro_Ptscontacts %>%
 
 #Enregistrer
 write.csv(Macro_Ptscontacts, file = "/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/Data/Processed_Macro/Macro_Ptscontacts.csv", row.names = FALSE)
+
+
+
+
+####DATA FINALE modifiées 
+#Créer data merge 
+#juste changer la colonne jour de mise en eau 
+library(dplyr); library(readr); library(here)
+df_flore <- read_csv("df_merged_final_old.csv")
+
+# Jour depuis le 1er septembre de l'année hydro de la campagne (1er sept = jour 1)
+hydro_day <- function(date, year_survey) {
+  as.integer(as.Date(date) - as.Date(paste0(year_survey - 1, "-09-01"))) + 1L
+}
+
+# Une table par fichier ; l'année de référence vient du fichier (pas de la colonne Year)
+hydro_2020 <- read_csv(("hydroperiode_2020_Vfinale.csv"), show_col_types = FALSE) %>%
+  mutate(mise_en_eau_hydro = hydro_day(mise_en_eau, 2020))
+hydro_2025 <- read_csv(("hydroperiode_2025_Vfinale.csv"), show_col_types = FALSE) %>%
+  mutate(mise_en_eau_hydro = hydro_day(mise_en_eau, 2025))
+
+df_hydro <- bind_rows(hydro_2020, hydro_2025) %>%
+  distinct(Year, ID_LAG, .keep_all = TRUE) %>%          # D_08 (2020) apparaît 2 fois : on garde la 1re ligne
+  dplyr::select(Year, ID_LAG, mise_en_eau_hydro)
+
+# Remplacement dans une NOUVELLE table (la colonne garde sa position)
+df_flore_hydro <- df_flore %>%
+  left_join(df_hydro, by = c("Year", "ID_LAG")) %>%
+  mutate(mise_en_eau_num = mise_en_eau_hydro) %>%
+  dplyr::select(-mise_en_eau_hydro)
+
+stopifnot(nrow(df_flore_hydro) == nrow(df_flore))                                  # pas de lignes en plus
+stopifnot(sum(is.na(df_flore_hydro$mise_en_eau_num)) == sum(is.na(df_flore$mise_en_eau_num)))
+
+write_csv(df_flore_hydro, file ="/home/anstett/Documents/LTM-Flora/Analyses_stats/Analyse_Globale/df_merged_final.csv")
+
+
 
 
 
