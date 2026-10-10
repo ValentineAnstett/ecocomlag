@@ -117,14 +117,13 @@ Les groupes sont définis par le clustering lui-même.
 
 comm_all <- macro %>%
   dplyr::select(all_of(species_cols))
-# Table "jumelle" de comm_all : ID_LAG et Year, dans le MEME ordre de lignes
 comm_meta_all <- macro %>% dplyr::select(ID_LAG, Year)
 
-# ID_LAG seul n'est pas unique : identifiant "ID_LAG_Année" pour chaque relevé
+# identifiant "ID_LAG_Année" pour chaque relevé
 rownames(comm_all) <- paste(macro$ID_LAG, macro$Year, sep = "_")
-colnames(comm_all) <- gsub(" ", ".", colnames(comm_all))   # noms de colonnes utilisables comme noms R
+colnames(comm_all) <- gsub(" ", ".", colnames(comm_all))
 
-# Relevés sans aucune végétation (recouvrement total = 0 sur toutes les espèces) : la distance de Bray-Curtis n'est pas définie entre deux relevés vides (0/0) donc  on les retire du clustering proprement dit, mais on les garde de côté (comm_zero) pour leur assigner ensuite un groupe commun "0 : sans végétation" pour la matrice de conf 
+# Relevés sans aucune végétation (recouvrement total = 0 sur toutes les espèces) : la distance de Bray-Curtis n'est pas définie entre deux relevés vides (0/0) donc  on les retire du clustering , mais on les garde de côté (comm_zero) pour leur assigner ensuite un groupe commun "0 : sans végétation" pour la matrice de conf 
 keep_rows <- rowSums(comm_all) > 0
 
 comm      <- comm_all[keep_rows, ]         # relevés végétalisés -> utilisés pour le clustering
@@ -326,7 +325,7 @@ anova(betadisper(dist_bc, meta_clean$Site))
 anova(betadisper(dist_bc, meta_clean$Year))
 
 # --- Effet Année (apparié) : permutations restreintes À L'INTÉRIEUR de chaque lagune ---
-# (inchangé : tous les relevés non vides, une lagune à un seul relevé ne gêne pas ce test)
+# info : les relevés une lagune à un seul relevé ne gêne pas ce test)
 perm_year <- how(
   within = Within(type = "free"),
   plots  = Plots(strata = meta_clean$ID_LAG, type = "none"),
@@ -335,22 +334,20 @@ perm_year <- how(
 cat("--- Effet Année (permutations intra-lagune) ---\n")
 adonis2(dist_bc ~ Year, data = meta_clean, permutations = perm_year, by = "margin")
 
-# --- Effet Site (inter-lagune) : sous-ensemble ÉQUILIBRÉ ---   # [MODIF] tout ce bloc
-# permute exige le même nombre de relevés par lagune pour permuter des lagunes entières :
-# on garde les lagunes avec un relevé non vide en 2020 ET en 2025.
+# --- Effet Site (inter-lagune) : création d'un sous-ensemble = exige le même nombre de relevés par lagune pour permuter des lagunes entières
 ids_2obs <- names(table(meta_clean$ID_LAG))[table(meta_clean$ID_LAG) == 2]
 
 meta_bal <- meta_clean %>%
-  mutate(row_id = row_number()) %>%          # pour retrouver les mêmes lignes dans data_num_clean
+  mutate(row_id = row_number()) %>%          
   filter(ID_LAG %in% ids_2obs) %>%
-  arrange(ID_LAG, Year) %>%                  # blocs contigus, années dans le même ordre
+  arrange(ID_LAG, Year) %>%                  
   mutate(ID_LAG = factor(ID_LAG), Site = droplevels(Site))
 data_bal <- data_num_clean[meta_bal$row_id, ]
 dist_bal <- vegdist(data_bal, method = "bray")
 
 stopifnot(all(table(meta_bal$ID_LAG) == 2))
 cat("Lagunes retenues :", nlevels(meta_bal$ID_LAG), "| relevés :", nrow(meta_bal), "\n")
-meta_bal %>% distinct(ID_LAG, Site) %>% count(Site)   # lagunes par site
+meta_bal %>% distinct(ID_LAG, Site) %>% count(Site)   
 
 perm_site <- how(
   within = Within(type = "none"),                            # jamais de permutation intra-lagune
