@@ -325,23 +325,43 @@ dist_bc <- vegdist(data_num_clean, method = "bray")
 anova(betadisper(dist_bc, meta_clean$Site))
 anova(betadisper(dist_bc, meta_clean$Year))
 
-# --- Effet Année (apparié) : permutations restreintes A L'INTERIEUR de chaque lagune ---
+# --- Effet Année (apparié) : permutations restreintes À L'INTÉRIEUR de chaque lagune ---
+# (inchangé : tous les relevés non vides, une lagune à un seul relevé ne gêne pas ce test)
 perm_year <- how(
-  within = Within(type = "free"),                             # permute librement...
-  plots  = Plots(strata = meta_clean$ID_LAG, type = "none"),   # ...mais jamais entre lagunes
+  within = Within(type = "free"),
+  plots  = Plots(strata = meta_clean$ID_LAG, type = "none"),
   nperm  = 999
 )
 cat("--- Effet Année (permutations intra-lagune) ---\n")
 adonis2(dist_bc ~ Year, data = meta_clean, permutations = perm_year, by = "margin")
 
-# --- Effet Site (inter-lagune) : permutations restreintes ENTRE lagunes ---
+# --- Effet Site (inter-lagune) : sous-ensemble ÉQUILIBRÉ ---   # [MODIF] tout ce bloc
+# permute exige le même nombre de relevés par lagune pour permuter des lagunes entières :
+# on garde les lagunes avec un relevé non vide en 2020 ET en 2025.
+ids_2obs <- names(table(meta_clean$ID_LAG))[table(meta_clean$ID_LAG) == 2]
+
+meta_bal <- meta_clean %>%
+  mutate(row_id = row_number()) %>%          # pour retrouver les mêmes lignes dans data_num_clean
+  filter(ID_LAG %in% ids_2obs) %>%
+  arrange(ID_LAG, Year) %>%                  # blocs contigus, années dans le même ordre
+  mutate(ID_LAG = factor(ID_LAG), Site = droplevels(Site))
+data_bal <- data_num_clean[meta_bal$row_id, ]
+dist_bal <- vegdist(data_bal, method = "bray")
+
+stopifnot(all(table(meta_bal$ID_LAG) == 2))
+cat("Lagunes retenues :", nlevels(meta_bal$ID_LAG), "| relevés :", nrow(meta_bal), "\n")
+meta_bal %>% distinct(ID_LAG, Site) %>% count(Site)   # lagunes par site
+
 perm_site <- how(
-  within = Within(type = "none"),                              # jamais de permutation intra-lagune...
-  plots  = Plots(strata = meta_clean$ID_LAG, type = "free"),    # ...seulement entre blocs "lagune"
+  within = Within(type = "none"),                            # jamais de permutation intra-lagune
+  plots  = Plots(strata = meta_bal$ID_LAG, type = "free"),   # on permute des lagunes entières
   nperm  = 999
 )
-cat("--- Effet Site (permutations inter-lagune) ---\n")
-adonis2(dist_bc ~ Site, data = meta_clean, permutations = perm_site, by = "margin") #Ne peut pas fonctionner si chaque lag n'a pas le même nombre d'obs 
+
+cat("--- Effet Site (permutations inter-lagune, lagunes avec 2 relevés) ---\n")
+adonis2(dist_bal ~ Site, data = meta_bal, permutations = perm_site, by = "margin")
+
+anova(betadisper(dist_bal, meta_bal$Site))   # dispersion revérifiée sur ce sous-ensemble
 ```
 
 #### c)RDA contrainte - Facteurs écologiques de la composition
