@@ -670,7 +670,7 @@ p_richness <- ggplot(site_wide, aes(x = mean_sp_2020, y = mean_sp_2025, color = 
 
 p_richness
 
-#ggsave("figure_richesse_finale.svg", plot = p_richness, width = 6, height = 6, units = "in")
+ggsave("figure_richesse_finale.svg", plot = p_richness, width = 6, height = 6, units = "in")
 ```
 
 #### b) TBI
