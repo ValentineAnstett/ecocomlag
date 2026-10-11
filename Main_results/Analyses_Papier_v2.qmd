@@ -662,7 +662,7 @@ p_richness <- ggplot(site_wide, aes(x = mean_sp_2020, y = mean_sp_2025, color = 
   geom_text(aes(label = Site), fontface = "bold", size = 6, show.legend = FALSE) +
   scale_x_continuous(limits = c(0, 4), breaks = 0:4) +
   scale_y_continuous(limits = c(0, 4), breaks = 0:4) +
-  labs(x = "Number of species in 2020", y = "Number of species in 2025",
+  labs(x = "Mean number of species in 2020", y = "Mean number of species in 2025",
        subtitle = paste0("p = ",
                           signif(wilcox_sp$p.value, 3))) +
   theme_minimal() +
