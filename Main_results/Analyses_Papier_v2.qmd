@@ -283,6 +283,28 @@ cat("Lagunes ayant changé de groupe :",
     sum(groupes_wide$groupe_2020 != groupes_wide$groupe_2025), "/", nrow(groupes_wide), "\n")
 ```
 
+```{r}
+#| label: lagunes-par-cluster
+
+lagunes_cluster <- groupes_df %>%
+  left_join(macro %>% distinct(ID_LAG, Site), by = "ID_LAG") %>%
+  arrange(groupe, Site, ID_LAG, Year)
+
+# Relevés des clusters 2 et 3
+lagunes_cluster %>% filter(groupe %in% c(2, 3)) %>% dplyr::select(groupe, Site, ID_LAG, Year)
+
+# Résumé : une ligne par cluster (le groupe 0 = sans végétation reste séparé)
+lagunes_cluster %>%
+  filter(groupe %in% 1:k) %>%
+  group_by(groupe) %>%
+  summarise(n_releves = dplyr::n(), n_lagunes = n_distinct(ID_LAG),
+            liste = paste0(ID_LAG, " (", Year, ")", collapse = ", "), .groups = "drop")
+
+# Lagunes qui changent de cluster entre 2020 et 2025
+groupes_wide %>% filter(groupe_2020 != groupe_2025)
+```
+
+
 On caractérise ensuite chaque groupe par ses espèces indicatrices (méthode IndVal de Dufrêne & Legendre, via `multipatt`). Cette étape reste descriptive et ne dépend pas de la question de significativité soulevée ci-dessus.
 
 ```{r indval}
@@ -303,6 +325,45 @@ ggplot(indval_tab, aes(x = reorder(species, stat), y = stat)) +
   labs(x = NULL, y = "IndVal") +
   theme_minimal()
 ```
+```{r}
+#| label: tableau-frequence-par-groupe
+#| tbl-cap: "Fréquence d'occurrence (%) de chaque espèce dans chaque cluster"
+
+grp <- factor(groups)          # cluster de chaque relevé végétalisé (même ordre que comm)
+table(grp)                     # dénominateur : nombre de relevés par cluster
+
+# Une ligne par espèce x cluster : relevés où l'espèce est présente / relevés du cluster
+freq_groupe <- as.data.frame(comm) %>%
+  mutate(cluster = paste0("G", grp)) %>%
+  pivot_longer(-cluster, names_to = "espece", values_to = "cover") %>%
+  group_by(cluster, espece) %>%
+  summarise(n_releves  = dplyr::n(),
+            n_presence = sum(cover > 0),
+            freq_pct   = round(100 * n_presence / n_releves),
+            .groups = "drop")
+
+# Tableau large : une ligne par espèce, une colonne par cluster (en %)
+tab_freq_groupe <- freq_groupe %>%
+  dplyr::select(espece, cluster, freq_pct) %>%
+  pivot_wider(names_from = cluster, values_from = freq_pct) %>%
+  arrange(desc(G1))
+tab_freq_groupe
+
+# Figure : fréquence (%) par espèce et par cluster
+p_freq_groupe <- ggplot(freq_groupe,
+                        aes(cluster, factor(espece, levels = rev(colnames(comm))), fill = freq_pct)) +
+  geom_tile(colour = "white") +
+  geom_text(aes(label = paste0(freq_pct, "%")), size = 5) +
+  scale_fill_gradient(low = "white", high = "#44AA99", limits = c(0, 100), name = "Frequency (%)") +
+  scale_y_discrete(labels = function(x) gsub("\\.", " ", x)) +
+  labs(x = "Cluster", y = NULL) +
+  theme_minimal(base_size = 16) +
+  theme(panel.grid = element_blank(), axis.text.y = element_text(face = "italic"))
+p_freq_groupe
+```
+
+
+
 
 #### b)PERMANOVA appariée - Composition globale : effet Site et Année
 
