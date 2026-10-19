@@ -106,9 +106,7 @@ cat("Relevé :", nrow(macro), "| Espèces retenues :", length(species_cols), "\n
 
 #### a) Clustering + matrice de confusion + IndVa - Composition
 
-On réalise un clustering hiérarchique sur l'ensemble des relevés 2020 et 2025 combinés (chaque ligne = une lagune à une date donnée, sans fusionner les deux années). 
-La méthode d'agrégation est choisie automatiquement en comparant la corrélation cophénétique de trois méthodes usuelles. 
-Les groupes sont définis par le clustering lui-même.
+On réalise un clustering hiérarchique sur l'ensemble des relevés 2020 et 2025 combinés (chaque ligne = une lagune à une date donnée, sans fusionner les deux années). La méthode d'agrégation est choisie automatiquement en comparant la corrélation cophénétique de trois méthodes usuelles. Les groupes sont définis par le clustering lui-même.
 
 ```{r cluster}
 #| label: clustering
@@ -304,7 +302,6 @@ lagunes_cluster %>%
 groupes_wide %>% filter(groupe_2020 != groupe_2025)
 ```
 
-
 On caractérise ensuite chaque groupe par ses espèces indicatrices (méthode IndVal de Dufrêne & Legendre, via `multipatt`). Cette étape reste descriptive et ne dépend pas de la question de significativité soulevée ci-dessus.
 
 ```{r indval}
@@ -325,6 +322,7 @@ ggplot(indval_tab, aes(x = reorder(species, stat), y = stat)) +
   labs(x = NULL, y = "IndVal") +
   theme_minimal()
 ```
+
 ```{r}
 #| label: tableau-frequence-par-groupe
 #| tbl-cap: "Fréquence d'occurrence (%) de chaque espèce dans chaque cluster"
@@ -361,9 +359,6 @@ p_freq_groupe <- ggplot(freq_groupe,
   theme(panel.grid = element_blank(), axis.text.y = element_text(face = "italic"))
 p_freq_groupe
 ```
-
-
-
 
 #### b)PERMANOVA appariée - Composition globale : effet Site et Année
 
@@ -993,7 +988,6 @@ ggplot(df_long, aes(Espece, Abondance, fill = factor(Year))) +
   scale_fill_manual(values = c("2020" = "#F8766D", "2025" = "#00BFC4"))
 ```
 
-
 ### b) Modèle de niches (GP)
 
 ### Formatage des données
@@ -1291,6 +1285,7 @@ p_alth_list$salinity   # exemple : accès à un graphique individuel
 ```
 
 ### Ruppia
+
 #### Représenter les données avec des graphs pour chaque espèce
 
 ```{r}
@@ -1312,6 +1307,7 @@ data_rup <- data_rup_all %>%
   mutate(Year = factor(Year), Site = factor(Site), ID_LAG = factor(ID_LAG))
 
 ```
+
 ```{r}
 # Graph
 # Year
@@ -1381,7 +1377,9 @@ ggplot(data = data_rup, aes(x = duree_assec, y = espece)) +
   labs(x = "duree_assec", y = "Fréquence d'occurrence")
 
 ```
-###Modélisation Ruppia 
+
+###Modélisation Ruppia
+
 ```{r}
 ## Modélisation de la niche d'Althenia filiformis
 # Fit du modèle
@@ -1444,6 +1442,7 @@ round(conc$observed, 1) # regarde simplement la concurvité des données d'entr�
 plot(m_rup)
 
 ```
+
 ```{r}
 #| label: rup-predictions
 
@@ -1537,7 +1536,6 @@ p_rup_list$salinity   # exemple : accès à un graphique individuel
 # ggsave("rup_panel.svg", plot = p_rup_panel, width = 12, height = 7, units = "in")
 # ggsave("rup_salinity.svg", plot = p_rup_list$salinity, width = 5, height = 4, units = "in")
 ```
-
 
 ### Lamprothamnium
 
@@ -1858,4 +1856,3 @@ p_lampro_list$salinity   # exemple : accès à un graphique individuel
 # ggsave("lampro_panel.svg", plot = p_lampro_panel, width = 12, height = 7, units = "in")
 # ggsave("lampro_salinity.svg", plot = p_lampro_list$salinity, width = 5, height = 4, units = "in")
 ```
-
