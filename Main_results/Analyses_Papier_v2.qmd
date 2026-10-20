@@ -59,7 +59,7 @@ env_vars <- c("organic_matter", "ilr_fines_vs_sand", "ilr_clay_vs_silt",
 vars_env <- c(
   salinity = "Salinity", organic_matter = "Organic matter",
   ilr_fines_vs_sand = "Fines/Sand ratio", ilr_clay_vs_silt = "Clay/Silt ratio",
-  water_level = "Water level (cm)", Surface = "Surface (m²)",
+  water_level = "Water depth (cm)", Surface = "Surface (m²)",
   dist_trait_cote_m = "Distance to coastline (m)", mise_en_eau_num = "Reflooding date (j)",
   duree_assec = "Dry period duration (j)"
 )
@@ -360,6 +360,157 @@ p_freq_groupe <- ggplot(freq_groupe,
 p_freq_groupe
 ```
 
+#### a-bis) Clustering avec Chi2 
+
+```{r}
+#| label: hc-alt-helpers
+
+# Choix de la méthode d'agrégation par corrélation cophénétique (même logique que le clustering principal)
+fit_hc_alt <- function(d, methods = c("complete", "average", "ward.D2")) {
+  coph_alt <- sapply(methods, function(m) cor(d, cophenetic(hclust(d, method = m))))
+  best <- methods[which.max(coph_alt)]
+  list(hc = hclust(d, method = best), method = best, coph = coph_alt)
+}
+
+# Adjusted Rand Index : similarité entre deux partitions (1 = identiques, 0 = hasard)
+ari_alt <- function(a, b) {
+  tab <- table(a, b); n <- sum(tab)
+  idx <- sum(choose(tab, 2))
+  ra  <- sum(choose(rowSums(tab), 2)); cb <- sum(choose(colSums(tab), 2))
+  expd <- ra * cb / choose(n, 2)
+  (idx - expd) / (0.5 * (ra + cb) - expd)
+}
+```
+
+```{r}
+#| label: hclust-chi2-option
+
+# Copie de comm (même lignes, même ordre) ; comm n'est pas modifié
+comm_chi <- as.matrix(comm)[, colSums(comm) > 0, drop = FALSE]
+rownames(comm_chi) <- paste(comm_meta$ID_LAG, comm_meta$Year, sep = "_")
+stopifnot(all(rowSums(comm_chi) > 0))       # le chi2 exige des relevés non vides
+
+# Distance du chi2 = distance euclidienne sur les abondances transformées "chi.square"
+dist_chi <- dist(decostand(comm_chi, method = "chi.square"))
+
+fit_chi    <- fit_hc_alt(dist_chi)
+hc_chi     <- fit_chi$hc
+k_chi      <- k                              # même nombre de groupes que le clustering principal (modifiable)
+groups_chi <- cutree(hc_chi, k = k_chi)
+
+cat("Méthode retenue (chi2) :", fit_chi$method, "\n")
+print(round(fit_chi$coph, 3))                # corrélation cophénétique de chaque méthode
+table(groups_chi)
+
+# Comparaison avec Bray-Curtis (la numérotation des groupes est arbitraire : lire la table, pas les numéros)
+table(bray = as.integer(groups), chi2 = as.integer(groups_chi))
+cat("ARI Bray-Curtis vs chi2 :", round(ari_alt(groups, groups_chi), 3), "\n")
+
+plot(hc_chi, hang = -1, cex = 0.4, main = "Chi-square distance", xlab = "", sub = "")
+rect.hclust(hc_chi, k = k_chi, border = 2:(k_chi + 1))
+```
+
+```{r}
+#| label: fig-dendro-bipartite-chi2
+#| fig-cap: "Clustering des relevés (distance du chi2) et réseau bipartite espèces-relevés"
+
+stopifnot(k_chi <= 3)    # palette et formes définies pour 3 groupes au maximum
+
+# Ordre manuel des espèces (affichage uniquement) : copie de la liste du graphique Bray-Curtis
+sp_order_chi <- c(
+  "Riella.notarisii", "Tolypella.salina", "Tolypella.hispanica",
+  "Riella.helicophylla", "Ruppia.maritima", "Lamprothamnium.papulosum",
+  "Althenia.filiformis", "Ruppia.cirrhosa", "Chara.canescens"
+)
+stopifnot(setequal(colnames(comm_chi), sp_order_chi))
+comm_chi_ord <- comm_chi[, sp_order_chi]     # copie réordonnée ; comm_chi n'est pas modifié
+
+# Positions des feuilles du dendrogramme
+dend_chi <- dendro_data(hc_chi)
+h_chi    <- max(dend_chi$segments$y)         # hauteur de l'arbre : sert à placer les espèces sous le dendrogramme
+
+leaf_pos_chi <- dend_chi$labels %>%
+  mutate(site   = as.character(label),
+         x_plot = x,
+         y_plot = 0,
+         group  = factor(groups_chi[as.character(label)], levels = seq_len(k_chi))) %>%
+  arrange(x)
+
+# Positions des espèces (dans l'ordre manuel), sous l'arbre
+sp_pos_chi <- data.frame(
+  species = colnames(comm_chi_ord),
+  x_plot  = seq(min(leaf_pos_chi$x_plot), max(leaf_pos_chi$x_plot), length.out = ncol(comm_chi_ord)),
+  y_plot  = -2 * h_chi
+)
+
+# Liens relevés-espèces (un lien par couple relevé x espèce présent)
+links_chi <- as.data.frame(comm_chi_ord) %>%
+  mutate(site = rownames(comm_chi_ord)) %>%
+  pivot_longer(-site, names_to = "species", values_to = "abundance") %>%
+  filter(abundance > 0) %>%
+  left_join(leaf_pos_chi %>% dplyr::select(site, x_site = x_plot, y_site = y_plot), by = "site") %>%
+  left_join(sp_pos_chi   %>% dplyr::select(species, x_sp = x_plot, y_sp = y_plot), by = "species")
+
+p_dendro_chi <- ggplot() +
+  geom_segment(data = dend_chi$segments, aes(x, y, xend = xend, yend = yend)) +
+  geom_segment(
+    data = links_chi,
+    aes(x = x_site, y = y_site, xend = x_sp, yend = y_sp, linewidth = abundance),
+    alpha = 0.4, color = "grey40"
+  ) +
+  geom_point(
+    data = leaf_pos_chi,
+    aes(x_plot, y_plot, shape = group, fill = group),
+    size = 3.5, color = "black", stroke = 0.9
+  ) +
+  geom_text(data = sp_pos_chi, aes(x_plot, y_plot - 0.3 * h_chi, label = species), size = 3.5) +
+  scale_shape_manual(values = c(21, 22, 24)[seq_len(k_chi)], name = "Cluster") +
+  scale_fill_manual(values = c("#009E73", "#E69F00", "#0072B2")[seq_len(k_chi)], name = "Cluster") +
+  scale_linewidth(range = c(0.2, 2.5)) +
+  labs(
+    title    = "Clustering of surveys (chi-square distance) and bipartite network",
+    subtitle = paste0(fit_chi$method, " (cophenetic correlation = ", round(max(fit_chi$coph), 3), ")"),
+    y        = "Chi-square distance"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(axis.text = element_blank(), axis.title.x = element_blank(), panel.grid = element_blank())
+
+p_dendro_chi
+
+#ggsave("figure_cluster_chi2.svg", plot = p_dendro_chi, width = 18, height = 10, units = "in")
+```
+
+Test avec P-A
+
+```{r}
+#| label: hclust-pa-option
+
+# Matrice binaire (copie de comm) : 1 = espèce présente, 0 = absente
+comm_pa <- (as.matrix(comm) > 0) * 1
+rownames(comm_pa) <- paste(comm_meta$ID_LAG, comm_meta$Year, sep = "_")
+
+# Avec 9 espèces au plus, beaucoup de relevés ont exactement la même composition
+cat("Assemblages distincts :", nrow(unique(comm_pa)), "pour", nrow(comm_pa), "relevés\n")
+
+# Jaccard sur données binaires (alternative : method = "bray" avec binary = TRUE, soit Sørensen)
+dist_pa <- vegdist(comm_pa, method = "jaccard", binary = TRUE)
+
+fit_pa    <- fit_hc_alt(dist_pa)
+hc_pa     <- fit_pa$hc
+k_pa      <- k
+groups_pa <- cutree(hc_pa, k = k_pa)
+
+cat("Méthode retenue (présence-absence) :", fit_pa$method, "\n")
+print(round(fit_pa$coph, 3))
+table(groups_pa)
+
+table(bray = as.integer(groups), pa = as.integer(groups_pa))
+cat("ARI Bray-Curtis vs présence-absence :", round(ari_alt(groups, groups_pa), 3), "\n")
+
+plot(hc_pa, hang = -1, cex = 0.4, main = "Presence-absence (Jaccard)", xlab = "", sub = "")
+rect.hclust(hc_pa, k = k_pa, border = 2:(k_pa + 1))
+```
+
 #### b)PERMANOVA appariée - Composition globale : effet Site et Année
 
 ```{r permanova-site-year}
@@ -590,6 +741,180 @@ pheatmap(r_plot, cluster_rows = TRUE, cluster_cols = TRUE,
          angle_col = 45,
          color = heatmap_colors,
          breaks = seq(-1, 1, length.out = 101))
+
+```
+
+#### c-bis) CCA avec Chi2 et toutes les espèces 
+
+```{r}
+#| label: cca-option
+
+Y_cca <- Y_clean[, colSums(Y_clean) > 0, drop = FALSE]    # espèces présentes dans ces relevés
+X_cca <- as.data.frame(scale(X_clean))                     # variables standardisées (copie)
+X_cca$Site <- site_clean                                   # covariable
+
+# Même structure que la RDA : Site conditionné
+form_cca <- as.formula(paste("Y_cca ~", paste(colnames(X_clean), collapse = " + "), "+ Condition(Site)"))
+cca_result <- cca(form_cca, data = X_cca)
+
+# Mêmes permutations contraintes que la RDA : échanges uniquement au sein de chaque lagune
+perm_cca <- how(blocks = id_clean, nperm = 999)
+
+anova(cca_result, permutations = perm_cca)                 
+anova(cca_result, by = "axis", permutations = perm_cca)
+anova(cca_result, by = "term", permutations = perm_cca)
+vif.cca(cca_result)
+
+# Fréquence de chaque espèce : le chi2 donne du poids aux espèces rares
+colSums(Y_cca > 0)
+```
+
+```{r}
+#| label: fig-cca-option
+
+sc_site_cca <- as.data.frame(scores(cca_result, display = "sites",   scaling = 2))
+sc_sp_cca   <- as.data.frame(scores(cca_result, display = "species", scaling = 2))
+sc_env_cca  <- as.data.frame(scores(cca_result, display = "bp",      scaling = 2))
+sc_sp_cca$Species <- gsub("\\.", " ", rownames(sc_sp_cca))
+sc_env_cca$Var    <- vars_env[rownames(sc_env_cca)]
+eig_cca <- summary(cca_result)$concont$importance["Proportion Explained", 1:2] * 100
+
+p_cca <- ggplot() +
+  geom_point(data = sc_site_cca, aes(CCA1, CCA2), colour = "grey70", size = 0.8) +
+  geom_segment(data = sc_sp_cca, aes(x = 0, y = 0, xend = CCA1, yend = CCA2),
+               arrow = arrow(length = unit(0.25, "cm")), colour = "#009E73") +
+  geom_text_repel(data = sc_sp_cca, aes(CCA1, CCA2, label = Species), colour = "#009E73",
+                  size = 6, fontface = "bold.italic") +
+  geom_segment(data = sc_env_cca, aes(x = 0, y = 0, xend = CCA1, yend = CCA2),
+               arrow = arrow(length = unit(0.25, "cm")), colour = "#E69F00") +
+  geom_text_repel(data = sc_env_cca, aes(CCA1, CCA2, label = Var), colour = "#E69F00",
+                  size = 6, fontface = "bold") +
+  geom_hline(yintercept = 0) + geom_vline(xintercept = 0) +
+  xlab(paste0("CCA1 (", round(eig_cca[1], 1), "%)")) +
+  ylab(paste0("CCA2 (", round(eig_cca[2], 1), "%)")) +
+  theme_minimal(base_size = 18) +
+  theme(panel.border = element_rect(color = "black", fill = NA), panel.grid = element_blank())
+p_cca
+```
+
+CCA sans les espèces avec moins de 5 relevés
+
+```{r}
+#| label: cca-option-sel
+
+min_occ_cca <- 5    # nombre minimal de relevés où une espèce doit être présente
+
+occ_cca <- colSums(Y_clean > 0)
+print(sort(occ_cca))            # fréquence de chaque espèce (en nombre de relevés)
+
+sp_gardees_cca <- names(occ_cca)[occ_cca >= min_occ_cca]
+cat("Espèces retirées :", setdiff(names(occ_cca), sp_gardees_cca), "\n")
+
+# Copies de travail : Y_clean, X_clean, id_clean et site_clean ne sont pas modifiés
+Y_cca_sel  <- Y_clean[, sp_gardees_cca, drop = FALSE]
+rows_ok_cca_sel    <- rowSums(Y_cca_sel) > 0                 # relevés devenus vides : exclus (le chi² les interdit)
+cat("Relevés retirés (devenus vides) :", sum(!rows_ok_cca_sel), "| conservés :", sum(rows_ok_cca_sel), "\n")
+
+Y_cca_sel  <- Y_cca_sel[rows_ok_cca_sel, , drop = FALSE]
+X_cca_sel  <- as.data.frame(scale(X_clean[rows_ok_cca_sel, ]))   # variables standardisées
+X_cca_sel$Site <- site_clean[rows_ok_cca_sel]
+id_cca_sel <- factor(id_clean[rows_ok_cca_sel])
+
+form_cca_sel <- as.formula(paste("Y_cca_sel ~", paste(colnames(X_clean), collapse = " + "),
+                                 "+ Condition(Site)"))
+cca_sel <- cca(form_cca_sel, data = X_cca_sel)
+
+perm_cca_sel <- how(blocks = id_cca_sel, nperm = 999)   # permutations au sein de chaque lagune
+
+anova(cca_sel, permutations = perm_cca_sel)                  # test global
+anova(cca_sel, by = "axis", permutations = perm_cca_sel)
+anova(cca_sel, by = "term", permutations = perm_cca_sel)
+vif.cca(cca_sel)
+```
+
+```{r}
+#| label: fig-cca-option-sel
+
+sc_site_sel <- as.data.frame(scores(cca_sel, display = "sites",   scaling = 2))
+sc_sp_sel   <- as.data.frame(scores(cca_sel, display = "species", scaling = 2))
+sc_env_sel  <- as.data.frame(scores(cca_sel, display = "bp",      scaling = 2))
+
+sc_sp_sel$Species <- sub("^(.)[^.]*\\.(.*)$", "\\1. \\2", rownames(sc_sp_sel))
+sc_env_sel$Var    <- vars_env[rownames(sc_env_sel)]
+
+# Les flèches des variables remises à l'échelle des espèces et des relevés pour rester lisibles
+mul_sel <- 0.8 * min(
+  max(abs(c(sc_sp_sel$CCA1, sc_site_sel$CCA1))) / max(abs(sc_env_sel$CCA1)),
+  max(abs(c(sc_sp_sel$CCA2, sc_site_sel$CCA2))) / max(abs(sc_env_sel$CCA2)))
+
+eig_sel <- summary(cca_sel)$concont$importance["Proportion Explained", 1:2] * 100
+
+p_cca_sel <- ggplot() +
+  geom_hline(yintercept = 0, colour = "grey60") + geom_vline(xintercept = 0, colour = "grey60") +
+  geom_point(data = sc_site_sel, aes(CCA1, CCA2), colour = "grey80", size = 0.8) +           # relevés
+  geom_segment(data = sc_env_sel, aes(x = 0, y = 0, xend = CCA1 * mul_sel, yend = CCA2 * mul_sel),
+               arrow = arrow(length = unit(0.25, "cm")), colour = "#E69F00") +                # variables : flèches
+  geom_text_repel(data = sc_env_sel, aes(CCA1 * mul_sel, CCA2 * mul_sel, label = Var),
+                  colour = "#E69F00", size = 6, fontface = "bold") +
+  geom_point(data = sc_sp_sel, aes(CCA1, CCA2), colour = "#009E73", size = 3.5) +             # espèces : points (optima)
+  geom_text_repel(data = sc_sp_sel, aes(CCA1, CCA2, label = Species),
+                  colour = "#009E73", size = 6, fontface = "bold.italic") +
+  coord_equal() +
+  xlab(paste0("CCA1 (", round(eig_sel[1], 1), "%)")) +
+  ylab(paste0("CCA2 (", round(eig_sel[2], 1), "%)")) +
+  theme_minimal(base_size = 18) +
+  theme(panel.border = element_rect(color = "black", fill = NA), panel.grid = element_blank())
+p_cca_sel
+
+#ggsave("figure_cca_sel.svg", plot = p_cca_sel, width = 12, height = 9, units = "in")
+```
+
+```{r}
+#| label: fig-cca-option-sel-zoom
+
+type_sites <- "lc"     # "lc" = positions contraintes par l'environnement (plus compactes) ; "wa" = moyennes pondérées des espèces
+
+sc_site_z <- as.data.frame(scores(cca_sel, display = type_sites, scaling = 2))
+sc_sp_z   <- as.data.frame(scores(cca_sel, display = "species",  scaling = 2))
+sc_env_z  <- as.data.frame(scores(cca_sel, display = "bp",       scaling = 2))
+
+sc_site_z$Year <- factor(df_merged_final$Year[complete_rows][!zero_rows][rows_ok_cca_sel])
+stopifnot(nrow(sc_site_z) == length(rows_ok_cca_sel[rows_ok_cca_sel]))
+
+sc_sp_z$Species <- sub("^(.)[^.]*\\.(.*)$", "\\1. \\2", rownames(sc_sp_z))
+sc_env_z$Var    <- vars_env[rownames(sc_env_z)]
+
+# Flèches remises à l'échelle des sp
+mul_z <- 1.2 * max(abs(c(sc_sp_z$CCA1, sc_sp_z$CCA2))) / max(abs(c(sc_env_z$CCA1, sc_env_z$CCA2)))
+sc_env_z$x_arr <- sc_env_z$CCA1 * mul_z
+sc_env_z$y_arr <- sc_env_z$CCA2 * mul_z
+
+# Cadre centré sur les espèces et les flèches
+lim_z  <- 1.25 * max(abs(c(sc_sp_z$CCA1, sc_sp_z$CCA2, sc_env_z$x_arr, sc_env_z$y_arr)))
+n_hors <- sum(abs(sc_site_z$CCA1) > lim_z | abs(sc_site_z$CCA2) > lim_z)
+cat("Relevés hors du cadre :", n_hors, "/", nrow(sc_site_z), "\n")
+
+eig_z <- summary(cca_sel)$concont$importance["Proportion Explained", 1:2] * 100
+
+p_cca_zoom <- ggplot() +
+  geom_hline(yintercept = 0, colour = "grey70") + geom_vline(xintercept = 0, colour = "grey70") +
+  geom_point(data = sc_site_z, aes(CCA1, CCA2, colour = Year), size = 1.8, alpha = 0.6) +
+  scale_colour_manual(values = c("2020" = "#0072B2", "2025" = "#CC79A7"), name = "Year") +
+  geom_segment(data = sc_env_z, aes(x = 0, y = 0, xend = x_arr, yend = y_arr),
+               arrow = arrow(length = unit(0.25, "cm")), colour = "#E69F00") +
+  geom_text_repel(data = sc_env_z, aes(x_arr, y_arr, label = Var), colour = "#E69F00",
+                  size = 6, fontface = "bold", max.overlaps = Inf, box.padding = 0.6) +
+  geom_point(data = sc_sp_z, aes(CCA1, CCA2), colour = "#009E73", size = 4) +
+  geom_text_repel(data = sc_sp_z, aes(CCA1, CCA2, label = Species), colour = "#009E73",
+                  size = 6, fontface = "bold.italic", max.overlaps = Inf, box.padding = 0.6) +
+  coord_fixed(xlim = c(-lim_z, lim_z), ylim = c(-lim_z, lim_z)) +
+  labs(x = paste0("CCA1 (", round(eig_z[1], 1), "%)"), y = paste0("CCA2 (", round(eig_z[2], 1), "%)"),
+       caption = paste0(n_hors, " surveys outside the plotting window are not shown")) +
+  theme_minimal(base_size = 18) +
+  theme(panel.border = element_rect(color = "black", fill = NA), panel.grid = element_blank())
+p_cca_zoom
+
+#ggsave("figure_cca_sel_zoom.svg", plot = p_cca_zoom, width = 12, height = 9, units = "in")
 
 ```
 
@@ -1855,4 +2180,56 @@ p_lampro_list$salinity   # exemple : accès à un graphique individuel
 
 # ggsave("lampro_panel.svg", plot = p_lampro_panel, width = 12, height = 7, units = "in")
 # ggsave("lampro_salinity.svg", plot = p_lampro_list$salinity, width = 5, height = 4, units = "in")
+```
+
+Figure composite : 3 espèces
+
+```{r}
+#| label: niche-composite
+
+# Étiquettes et couleurs par espèce (palette colorblind)
+sp_niche  <- c(alth = "Althenia filiformis", rup = "Ruppia maritima", lampro = "Lamprothamnium papulosum")
+col_niche <- setNames(c("#009E73", "#0072B2", "#E69F00"), sp_niche)
+
+# Ordre des colonnes (à modifier librement) : doit contenir TOUTES les variables tracées
+ordre_cols_niche <- c("water_level", "salinity", "organic_matter",
+                      "ilr_fines_vs_sand", "mise_en_eau_num", "duree_assec")
+lev_cols_niche <- unname(vars_env[ordre_cols_niche])
+
+# Une table pour les 3 espèces (copies : pred_* et rug_* ne sont pas modifiés)
+pred_niche_all <- bind_rows(
+  pred_alth %>% mutate(espece = sp_niche[["alth"]]),
+  pred_rup  %>% mutate(espece = sp_niche[["rup"]]),
+  pred_lampro %>% mutate(espece = sp_niche[["lampro"]])
+) %>%
+  mutate(espece = factor(espece, levels = sp_niche),
+         variable_label = factor(as.character(variable_label), levels = lev_cols_niche))
+
+rug_niche_all <- bind_rows(
+  rug_alth %>% mutate(espece = sp_niche[["alth"]]),
+  rug_rup  %>% mutate(espece = sp_niche[["rup"]]),
+  rug_lampro %>% mutate(espece = sp_niche[["lampro"]])
+) %>%
+  mutate(espece = factor(espece, levels = sp_niche),
+         variable_label = factor(as.character(variable_label), levels = lev_cols_niche))
+
+p_niche_composite <- ggplot(pred_niche_all, aes(x, fit)) +
+  geom_ribbon(aes(ymin = lwr, ymax = upr, fill = espece), alpha = 0.2) +      # IC à 95 %
+  geom_line(aes(colour = espece), linewidth = 1.2) +                           # courbe de niche
+  geom_rug(data = rug_niche_all, aes(x = x), inherit.aes = FALSE,
+           alpha = 0.25, linewidth = 0.3) +                                    # observations
+  facet_grid(espece ~ variable_label, scales = "free_x",
+             labeller = labeller(variable_label = label_wrap_gen(14))) +
+  scale_colour_manual(values = col_niche, guide = "none") +
+  scale_fill_manual(values = col_niche, guide = "none") +
+  scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+  labs(x = NULL, y = "Predicted frequency") +
+  theme_bw(base_size = 14) +
+  theme(panel.grid = element_blank(),
+        strip.text.x = element_text(size = 12),
+        strip.text.y = element_text(size = 14, face = "italic"))
+
+p_niche_composite
+
+#ggsave("niche_composite.svg", plot = p_niche_composite, width = 16, height = 9, units = "in")
 ```
