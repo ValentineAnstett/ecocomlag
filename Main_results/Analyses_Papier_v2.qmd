@@ -360,7 +360,7 @@ p_freq_groupe <- ggplot(freq_groupe,
 p_freq_groupe
 ```
 
-#### a-bis) Clustering avec Chi2 
+#### a-bis) Clustering avec Chi2
 
 ```{r}
 #| label: hc-alt-helpers
@@ -744,7 +744,7 @@ pheatmap(r_plot, cluster_rows = TRUE, cluster_cols = TRUE,
 
 ```
 
-#### c-bis) CCA avec Chi2 et toutes les espèces 
+#### c-bis) CCA avec Chi2 et toutes les espèces
 
 ```{r}
 #| label: cca-option
@@ -918,6 +918,278 @@ p_cca_zoom
 
 ```
 
+Test la CCA sur les groupes du cluster
+
+```{r}
+#| label: cca-groupes-option
+
+stopifnot(k >= 3)                       # il faut au moins 2 axes contraints pour une figure à 2 dimensions
+cond_site_ccg <- FALSE                  # TRUE = retirer l'effet Site (comme la RDA) ; FALSE = description brute des groupes
+
+# Relevés végétalisés avec un groupe (1..k) et un environnement complet (mêmes critères que la RDA)
+df_ccg <- groupes_df %>%
+  filter(groupe %in% 1:k) %>%
+  inner_join(df_merged_final %>% dplyr::select(ID_LAG, Year, Site, all_of(names(vars_env))),
+             by = c("ID_LAG", "Year")) %>%
+  filter(complete.cases(across(all_of(names(vars_env))))) %>%
+  mutate(cluster = factor(paste0("G", groupe), levels = paste0("G", 1:k)))
+
+cat("Relevés :", nrow(df_ccg), "| lagunes :", n_distinct(df_ccg$ID_LAG), "\n")
+print(table(df_ccg$cluster))            # effectif de chaque groupe : à regarder avant d'interpréter
+
+# Matrice réponse : appartenance aux groupes (0/1), à la place des espèces
+Y_ccg <- model.matrix(~ 0 + cluster, data = df_ccg)
+colnames(Y_ccg) <- levels(df_ccg$cluster)
+stopifnot(all(colSums(Y_ccg) > 0))
+
+# Variables environnementales standardisées (copie)
+X_ccg <- as.data.frame(scale(df_ccg[, names(vars_env)]))
+X_ccg$Site <- factor(df_ccg$Site)
+
+rhs_ccg <- paste(names(vars_env), collapse = " + ")
+if (cond_site_ccg) rhs_ccg <- paste(rhs_ccg, "+ Condition(Site)")
+cca_ccg <- cca(as.formula(paste("Y_ccg ~", rhs_ccg)), data = X_ccg)
+
+# Permutations : au sein de chaque lagune si Site est conditionné, libres sinon (test alors descriptif)
+perm_ccg <- if (cond_site_ccg) how(blocks = factor(df_ccg$ID_LAG), nperm = 999) else how(nperm = 999)
+
+anova(cca_ccg, permutations = perm_ccg)                  # test global
+anova(cca_ccg, by = "axis", permutations = perm_ccg)
+anova(cca_ccg, by = "term", permutations = perm_ccg)
+vif.cca(cca_ccg)
+```
+
+```{r}
+#| label: fig-cca-groupes-option
+
+col_ccg <- setNames(c("#009E73", "#E69F00", "#0072B2")[1:k], paste0("G", 1:k))   # mêmes couleurs que le dendrogramme
+shp_ccg <- setNames(c(21, 22, 24)[1:k],                       paste0("G", 1:k))   # mêmes formes que le dendrogramme
+
+# Relevés : scores "lc" (combinaisons linéaires de l'environnement). Les scores "wa" donneraient
+# exactement la position du groupe pour chaque relevé, et tous les points se superposeraient.
+sc_site_ccg <- as.data.frame(scores(cca_ccg, display = "lc",      scaling = 2, choices = 1:2))
+sc_grp_ccg  <- as.data.frame(scores(cca_ccg, display = "species", scaling = 2, choices = 1:2))
+sc_env_ccg  <- as.data.frame(scores(cca_ccg, display = "bp",      scaling = 2, choices = 1:2))
+
+sc_site_ccg$cluster <- df_ccg$cluster
+n_ccg <- table(df_ccg$cluster)
+sc_grp_ccg$cluster  <- factor(rownames(sc_grp_ccg), levels = levels(df_ccg$cluster))
+sc_grp_ccg$lab      <- paste0(rownames(sc_grp_ccg), " (n = ", n_ccg[rownames(sc_grp_ccg)], ")")
+sc_env_ccg$Var      <- vars_env[rownames(sc_env_ccg)]
+
+# Flèches remises à l'échelle des relevés (95e centile, pour ne pas être écrasées par les valeurs extrêmes)
+mul_ccg <- 0.9 * quantile(abs(c(sc_site_ccg$CCA1, sc_site_ccg$CCA2)), 0.95) /
+  max(abs(c(sc_env_ccg$CCA1, sc_env_ccg$CCA2)))
+
+eig_ccg <- summary(cca_ccg)$concont$importance["Proportion Explained", 1:2] * 100
+
+p_ccg <- ggplot() +
+  geom_hline(yintercept = 0, colour = "grey70") + geom_vline(xintercept = 0, colour = "grey70") +
+  stat_ellipse(data = sc_site_ccg, aes(CCA1, CCA2, colour = cluster), level = 0.68,
+               linewidth = 0.8, show.legend = FALSE) +                                   # ellipse de chaque groupe
+  geom_point(data = sc_site_ccg, aes(CCA1, CCA2, shape = cluster, fill = cluster),
+             colour = "black", size = 2.5, alpha = 0.75) +                                # relevés
+  geom_segment(data = sc_env_ccg,
+               aes(x = 0, y = 0, xend = CCA1 * mul_ccg, yend = CCA2 * mul_ccg),
+               arrow = arrow(length = unit(0.25, "cm")), colour = "grey25") +            # variables
+  geom_text_repel(data = sc_env_ccg, aes(CCA1 * mul_ccg, CCA2 * mul_ccg, label = Var),
+                  colour = "grey25", size = 5.5, fontface = "bold", max.overlaps = Inf) +
+  geom_point(data = sc_grp_ccg, aes(CCA1, CCA2, shape = cluster, fill = cluster),
+             colour = "black", size = 7, stroke = 1.2) +                                  # positions des groupes
+  geom_label_repel(data = sc_grp_ccg, aes(CCA1, CCA2, label = lab), size = 5,
+                   fontface = "bold", fill = "white", max.overlaps = Inf) +
+  scale_fill_manual(values = col_ccg, name = "Cluster") +
+  scale_shape_manual(values = shp_ccg, name = "Cluster") +
+  scale_colour_manual(values = col_ccg, guide = "none") +
+  coord_fixed() +
+  labs(x = paste0("CCA1 (", round(eig_ccg[1], 1), "%)"), y = paste0("CCA2 (", round(eig_ccg[2], 1), "%)")) +
+  theme_minimal(base_size = 18) +
+  theme(panel.border = element_rect(color = "black", fill = NA), panel.grid = element_blank())
+p_ccg
+
+ggsave("figure_cca_groupes.svg", plot = p_ccg, width = 12, height = 9, units = "in")
+```
+
+tester la RDA sur les groupes aussi
+
+```{r}
+#| label: rda-groupes-option
+
+stopifnot(k >= 3)
+cond_site_rdg <- FALSE                  # TRUE = retirer l'effet Site (comme la RDA sur les espèces)
+
+# Relevés végétalisés avec un groupe (1..k) et un environnement complet
+df_rdg <- groupes_df %>%
+  filter(groupe %in% 1:k) %>%
+  inner_join(df_merged_final %>% dplyr::select(ID_LAG, Year, Site, all_of(names(vars_env))),
+             by = c("ID_LAG", "Year")) %>%
+  filter(complete.cases(across(all_of(names(vars_env))))) %>%
+  mutate(cluster = factor(paste0("G", groupe), levels = paste0("G", 1:k)))
+
+cat("Relevés :", nrow(df_rdg), "| lagunes :", n_distinct(df_rdg$ID_LAG), "\n")
+print(table(df_rdg$cluster))            # effectif de chaque groupe
+
+# Matrice réponse : appartenance aux groupes (0/1), sans transformation
+Y_rdg <- model.matrix(~ 0 + cluster, data = df_rdg)
+colnames(Y_rdg) <- levels(df_rdg$cluster)
+
+X_rdg <- as.data.frame(scale(df_rdg[, names(vars_env)]))
+X_rdg$Site <- factor(df_rdg$Site)
+
+rhs_rdg <- paste(names(vars_env), collapse = " + ")
+if (cond_site_rdg) rhs_rdg <- paste(rhs_rdg, "+ Condition(Site)")
+rda_rdg <- rda(as.formula(paste("Y_rdg ~", rhs_rdg)), data = X_rdg)
+
+perm_rdg <- if (cond_site_rdg) how(blocks = factor(df_rdg$ID_LAG), nperm = 999) else how(nperm = 999)
+
+RsquareAdj(rda_rdg)                     # part de la composition en groupes expliquée par l'environnement (brute et ajustée)
+
+# Graine locale : n'affecte pas les permutations des autres chunks
+withr::with_seed(123, anova(rda_rdg, permutations = perm_rdg))                    # test global
+withr::with_seed(123, anova(rda_rdg, by = "axis", permutations = perm_rdg))       # ignorer le 3e axe (voir plus bas)
+withr::with_seed(123, anova(rda_rdg, by = "term", permutations = perm_rdg))
+vif.cca(rda_rdg)
+```
+
+```{r}
+#| label: fig-rda-groupes-option
+
+col_rdg <- setNames(c("#009E73", "#E69F00", "#0072B2")[1:k], paste0("G", 1:k))   # couleurs du dendrogramme
+shp_rdg <- setNames(c(21, 22, 24)[1:k],                       paste0("G", 1:k))   # formes du dendrogramme
+
+# Relevés : scores "lc" (positions déduites de l'environnement). Les scores "wa" superposeraient
+# tous les relevés d'un même groupe au même point.
+sc_site_rdg <- as.data.frame(scores(rda_rdg, display = "lc", scaling = 2, choices = 1:2))
+sc_env_rdg  <- as.data.frame(scores(rda_rdg, display = "bp", scaling = 2, choices = 1:2))
+sc_site_rdg$cluster <- df_rdg$cluster
+sc_env_rdg$Var      <- vars_env[rownames(sc_env_rdg)]
+
+# Position de chaque groupe = centre de ses relevés
+n_rdg <- table(df_rdg$cluster)
+sc_grp_rdg <- sc_site_rdg %>%
+  group_by(cluster) %>%
+  summarise(RDA1 = mean(RDA1), RDA2 = mean(RDA2), .groups = "drop") %>%
+  mutate(lab = paste0(cluster, " (n = ", as.integer(n_rdg[as.character(cluster)]), ")"))
+
+# Flèches remises à l'échelle des relevés (95e centile, pour ne pas être écrasées par les valeurs extrêmes)
+mul_rdg <- 0.9 * quantile(abs(c(sc_site_rdg$RDA1, sc_site_rdg$RDA2)), 0.95) /
+  max(abs(c(sc_env_rdg$RDA1, sc_env_rdg$RDA2)))
+
+eig_rdg <- summary(rda_rdg)$concont$importance["Proportion Explained", 1:2] * 100
+
+p_rdg <- ggplot() +
+  geom_hline(yintercept = 0, colour = "grey70") + geom_vline(xintercept = 0, colour = "grey70") +
+  stat_ellipse(data = sc_site_rdg, aes(RDA1, RDA2, colour = cluster), level = 0.68,
+               linewidth = 0.8, show.legend = FALSE) +
+  geom_point(data = sc_site_rdg, aes(RDA1, RDA2, shape = cluster, fill = cluster),
+             colour = "black", size = 2.5, alpha = 0.75) +
+  geom_segment(data = sc_env_rdg,
+               aes(x = 0, y = 0, xend = RDA1 * mul_rdg, yend = RDA2 * mul_rdg),
+               arrow = arrow(length = unit(0.25, "cm")), colour = "grey25") +
+  geom_text_repel(data = sc_env_rdg, aes(RDA1 * mul_rdg, RDA2 * mul_rdg, label = Var),
+                  colour = "grey25", size = 5.5, fontface = "bold", max.overlaps = Inf) +
+  geom_point(data = sc_grp_rdg, aes(RDA1, RDA2, shape = cluster, fill = cluster),
+             colour = "black", size = 7, stroke = 1.2) +
+  geom_label_repel(data = sc_grp_rdg, aes(RDA1, RDA2, label = lab), size = 5,
+                   fontface = "bold", fill = "white", max.overlaps = Inf) +
+  scale_fill_manual(values = col_rdg, name = "Cluster") +
+  scale_shape_manual(values = shp_rdg, name = "Cluster") +
+  scale_colour_manual(values = col_rdg, guide = "none") +
+  coord_fixed() +
+  labs(x = paste0("RDA1 (", round(eig_rdg[1], 1), "%)"), y = paste0("RDA2 (", round(eig_rdg[2], 1), "%)")) +
+  theme_minimal(base_size = 18) +
+  theme(panel.border = element_rect(color = "black", fill = NA), panel.grid = element_blank())
+p_rdg
+
+ggsave("figure_rda_groupes.svg", plot = p_rdg, width = 12, height = 9, units = "in")
+```
+
+Ici tester de faire la cca sur seulement le groupe 1 du cluster
+
+```{r}
+#| label: cca-g1-option
+
+cond_site_g1 <- TRUE      # TRUE = Site conditionné + permutations intra-lagune (comme la RDA principale)
+min_occ_g1   <- 5         # espèces présentes dans moins de min_occ_g1 relevés du G1 : retirées
+
+# Relevés du groupe 1 avec environnement complet
+df_g1 <- groupes_df %>%
+  filter(groupe == 1) %>%
+  inner_join(df_merged_final %>% dplyr::select(ID_LAG, Year, Site, all_of(species_cols), all_of(names(vars_env))),
+             by = c("ID_LAG", "Year")) %>%
+  filter(complete.cases(across(all_of(names(vars_env)))))
+cat("Relevés G1 :", nrow(df_g1), "| lagunes :", n_distinct(df_g1$ID_LAG), "\n")
+
+# Fréquence de chaque espèce dans le G1 : on retire les absentes et les trop rares
+occ_g1 <- colSums(df_g1[, species_cols] > 0)
+print(sort(occ_g1))
+sp_g1 <- names(occ_g1)[occ_g1 >= min_occ_g1]
+cat("Espèces retirées :", setdiff(species_cols, sp_g1), "\n")
+
+# Relevés devenus vides : exclus (le chi² les interdit)
+rows_ok_g1 <- rowSums(df_g1[, sp_g1]) > 0
+cat("Relevés retirés (devenus vides) :", sum(!rows_ok_g1), "\n")
+df_g1 <- df_g1[rows_ok_g1, ]
+
+Y_g1 <- as.data.frame(df_g1[, sp_g1])                       # abondances brutes
+X_g1 <- as.data.frame(scale(df_g1[, names(vars_env)]))      # variables standardisées
+X_g1$Site <- factor(df_g1$Site)
+
+rhs_g1 <- paste(names(vars_env), collapse = " + ")
+if (cond_site_g1) rhs_g1 <- paste(rhs_g1, "+ Condition(Site)")
+cca_g1 <- cca(as.formula(paste("Y_g1 ~", rhs_g1)), data = X_g1)
+
+perm_g1 <- if (cond_site_g1) how(blocks = factor(df_g1$ID_LAG), nperm = 999) else how(nperm = 999)
+
+with(cca_g1, CCA$tot.chi / (CCA$tot.chi + CA$tot.chi))     # part de l'inertie expliquée par l'environnement
+
+# Graine locale : n'affecte pas les permutations des autres chunks
+withr::with_seed(123, anova(cca_g1, permutations = perm_g1))                    # test global
+withr::with_seed(123, anova(cca_g1, by = "axis", permutations = perm_g1))
+withr::with_seed(123, anova(cca_g1, by = "term", permutations = perm_g1))
+vif.cca(cca_g1)
+```
+
+```{r}
+#| label: fig-cca-g1-option
+
+sc_site_g1 <- as.data.frame(scores(cca_g1, display = "lc",      scaling = 2, choices = 1:2))
+sc_sp_g1   <- as.data.frame(scores(cca_g1, display = "species", scaling = 2, choices = 1:2))
+sc_env_g1  <- as.data.frame(scores(cca_g1, display = "bp",      scaling = 2, choices = 1:2))
+sc_site_g1$Year   <- factor(df_g1$Year)
+sc_sp_g1$Species  <- sub("^(.)[^.]*\\.(.*)$", "\\1. \\2", rownames(sc_sp_g1))   # "A. filiformis"
+sc_env_g1$Var     <- vars_env[rownames(sc_env_g1)]
+
+# Flèches remises à l'échelle des espèces ; cadre centré sur espèces et flèches
+mul_g1 <- 1.2 * max(abs(c(sc_sp_g1$CCA1, sc_sp_g1$CCA2))) / max(abs(c(sc_env_g1$CCA1, sc_env_g1$CCA2)))
+sc_env_g1$x_arr <- sc_env_g1$CCA1 * mul_g1
+sc_env_g1$y_arr <- sc_env_g1$CCA2 * mul_g1
+lim_g1   <- 1.25 * max(abs(c(sc_sp_g1$CCA1, sc_sp_g1$CCA2, sc_env_g1$x_arr, sc_env_g1$y_arr)))
+n_out_g1 <- sum(abs(sc_site_g1$CCA1) > lim_g1 | abs(sc_site_g1$CCA2) > lim_g1)
+
+eig_g1 <- summary(cca_g1)$concont$importance["Proportion Explained", 1:2] * 100
+
+p_g1 <- ggplot() +
+  geom_hline(yintercept = 0, colour = "grey70") + geom_vline(xintercept = 0, colour = "grey70") +
+  geom_point(data = sc_site_g1, aes(CCA1, CCA2, colour = Year), size = 1.8, alpha = 0.6) +
+  scale_colour_manual(values = c("2020" = "#0072B2", "2025" = "#CC79A7"), name = "Year") +
+  geom_segment(data = sc_env_g1, aes(x = 0, y = 0, xend = x_arr, yend = y_arr),
+               arrow = arrow(length = unit(0.25, "cm")), colour = "#E69F00") +
+  geom_text_repel(data = sc_env_g1, aes(x_arr, y_arr, label = Var), colour = "#E69F00",
+                  size = 6, fontface = "bold", max.overlaps = Inf, box.padding = 0.6) +
+  geom_point(data = sc_sp_g1, aes(CCA1, CCA2), colour = "#009E73", size = 4) +
+  geom_text_repel(data = sc_sp_g1, aes(CCA1, CCA2, label = Species), colour = "#009E73",
+                  size = 6, fontface = "bold.italic", max.overlaps = Inf, box.padding = 0.6) +
+  coord_fixed(xlim = c(-lim_g1, lim_g1), ylim = c(-lim_g1, lim_g1)) +
+  labs(x = paste0("CCA1 (", round(eig_g1[1], 1), "%)"), y = paste0("CCA2 (", round(eig_g1[2], 1), "%)"),
+       caption = paste0(n_out_g1, " surveys outside the plotting window are not shown")) +
+  theme_minimal(base_size = 18) +
+  theme(panel.border = element_rect(color = "black", fill = NA), panel.grid = element_blank())
+p_g1
+
+ggsave("figure_cca_g1.svg", plot = p_g1, width = 12, height = 9, units = "in")
+```
+
 ### 2) Spatial Hotspots of Community Change (TBI)
 
 #### a) Richesse spécifique (2020 vs 2025)
@@ -990,7 +1262,49 @@ p_richness <- ggplot(site_wide, aes(x = mean_sp_2020, y = mean_sp_2025, color = 
 
 p_richness
 
-ggsave("figure_richesse_finale.svg", plot = p_richness, width = 6, height = 6, units = "in")
+#ggsave("figure_richesse_finale.svg", plot = p_richness, width = 6, height = 6, units = "in")
+```
+
+```{r}
+richesse_globale <- n_sp %>%
+  filter(Year %in% c(2020, 2025)) %>%
+  summarise(
+    mean_sp = mean(n_sp, na.rm = TRUE),
+    sd_sp = sd(n_sp, na.rm = TRUE),
+    n = sum(!is.na(n_sp)),
+    se_sp = sd_sp / sqrt(n),
+    IC_inf = mean_sp - qt(0.975, df = n - 1) * se_sp,
+    IC_sup = mean_sp + qt(0.975, df = n - 1) * se_sp
+  )
+
+richesse_globale
+
+richesse_annee <- n_sp %>%
+  filter(Year %in% c(2020, 2025)) %>%
+  group_by(Year) %>%
+  summarise(
+    mean_sp = mean(n_sp, na.rm = TRUE),
+    sd_sp = sd(n_sp, na.rm = TRUE),
+    n = sum(!is.na(n_sp)),
+    se_sp = sd_sp / sqrt(n),
+    IC_inf = mean_sp - qt(0.975, df = n - 1) * se_sp,
+    IC_sup = mean_sp + qt(0.975, df = n - 1) * se_sp,
+    .groups = "drop"
+  )
+
+richesse_annee
+
+richesse_site_annee <- n_sp %>%
+  filter(Year %in% c(2020, 2025)) %>%
+  group_by(Site, Year) %>%
+  summarise(
+    mean_sp = mean(n_sp, na.rm = TRUE),
+    min_sp = min(n_sp, na.rm = TRUE),
+    max_sp = max(n_sp, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+richesse_site_annee
 ```
 
 #### b) TBI
@@ -2192,8 +2506,7 @@ sp_niche  <- c(alth = "Althenia filiformis", rup = "Ruppia maritima", lampro = "
 col_niche <- setNames(c("#009E73", "#0072B2", "#E69F00"), sp_niche)
 
 # Ordre des colonnes (à modifier librement) : doit contenir TOUTES les variables tracées
-ordre_cols_niche <- c("water_level", "salinity", "organic_matter",
-                      "ilr_fines_vs_sand", "mise_en_eau_num", "duree_assec")
+ordre_cols_niche <- c("mise_en_eau_num", "duree_assec","water_level", "salinity", "ilr_fines_vs_sand", "organic_matter", "ilr_clay_vs_silt", "dist_trait_cote_m")
 lev_cols_niche <- unname(vars_env[ordre_cols_niche])
 
 # Une table pour les 3 espèces (copies : pred_* et rug_* ne sont pas modifiés)
