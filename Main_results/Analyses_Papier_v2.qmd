@@ -31,6 +31,7 @@ library(permute)
 library(corrplot)
 library(lme4)
 library(scales)
+library(wesanderson)
 # library(comple)
 
 # ------------------------------------------------------------------
@@ -236,7 +237,7 @@ p_dendro <- ggplot() +
     size = 3.5
   ) +
   scale_shape_manual(values = c(21, 22, 24), name = "Cluster") +
-  scale_fill_manual(values = c("#009E73", "#E69F00", "#0072B2"), name = "Cluster") +
+  scale_fill_manual(values = wes_palette("GrandBudapest1", n=3), name = "Cluster") +
   scale_linewidth(range = c(0.2, 2.5)) +
   labs( y = "Bray-Curtis distance"
   ) +
@@ -249,7 +250,7 @@ p_dendro <- ggplot() +
 
 p_dendro
 
-ggsave("figure_cluster_color_Finale.svg", plot = p_dendro, width = 18, height = 10, units = "in")
+#ggsave("figure_cluster_color_Finale.svg", plot = p_dendro, width = 18, height = 10, units = "in")
 ```
 
 ::: callout-note
@@ -962,8 +963,8 @@ vif.cca(cca_ccg)
 ```{r}
 #| label: fig-cca-groupes-option
 
-col_ccg <- setNames(c("#009E73", "#E69F00", "#0072B2")[1:k], paste0("G", 1:k))   # mêmes couleurs que le dendrogramme
-shp_ccg <- setNames(c(21, 22, 24)[1:k],                       paste0("G", 1:k))   # mêmes formes que le dendrogramme
+col_ccg <- setNames(c("#009E73", "#E69F00", "#0072B2")[1:k], paste0("G", 1:k))  
+shp_ccg <- setNames(c(21, 22, 24)[1:k],                       paste0("G", 1:k))  
 
 # Relevés : scores "lc" (combinaisons linéaires de l'environnement). Les scores "wa" donneraient
 # exactement la position du groupe pour chaque relevé, et tous les points se superposeraient.
@@ -1007,7 +1008,7 @@ p_ccg <- ggplot() +
   theme(panel.border = element_rect(color = "black", fill = NA), panel.grid = element_blank())
 p_ccg
 
-ggsave("figure_cca_groupes.svg", plot = p_ccg, width = 12, height = 9, units = "in")
+#ggsave("figure_cca_groupes.svg", plot = p_ccg, width = 12, height = 9, units = "in")
 ```
 
 tester la RDA sur les groupes aussi
@@ -1101,7 +1102,7 @@ p_rdg <- ggplot() +
   theme(panel.border = element_rect(color = "black", fill = NA), panel.grid = element_blank())
 p_rdg
 
-ggsave("figure_rda_groupes.svg", plot = p_rdg, width = 12, height = 9, units = "in")
+#ggsave("figure_rda_groupes.svg", plot = p_rdg, width = 12, height = 9, units = "in")
 ```
 
 Ici tester de faire la cca sur seulement le groupe 1 du cluster
@@ -1187,7 +1188,7 @@ p_g1 <- ggplot() +
   theme(panel.border = element_rect(color = "black", fill = NA), panel.grid = element_blank())
 p_g1
 
-ggsave("figure_cca_g1.svg", plot = p_g1, width = 12, height = 9, units = "in")
+#ggsave("figure_cca_g1.svg", plot = p_g1, width = 12, height = 9, units = "in")
 ```
 
 ### 2) Spatial Hotspots of Community Change (TBI)
