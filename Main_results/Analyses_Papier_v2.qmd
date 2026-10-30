@@ -481,12 +481,12 @@ p_dendro_chi
 #ggsave("figure_cluster_chi2.svg", plot = p_dendro_chi, width = 18, height = 10, units = "in")
 ```
 
-Test avec P-A
+Test avec P-A (distance de Jaccard)
 
 ```{r}
 #| label: hclust-pa-option
 
-# Matrice binaire (copie de comm) : 1 = espèce présente, 0 = absente
+# Matrice binaire : 1 = espèce présente, 0 = absente
 comm_pa <- (as.matrix(comm) > 0) * 1
 rownames(comm_pa) <- paste(comm_meta$ID_LAG, comm_meta$Year, sep = "_")
 
@@ -570,6 +570,8 @@ anova(betadisper(dist_bal, meta_bal$Site))   # dispersion revérifiée sur ce so
 ```
 
 #### c)RDA contrainte - Facteurs écologiques de la composition
+
+Grosse corrélation entre mise en eau et durée d'assec =\> Est-ce qu'il ne faudrait pas revoir la séléction des variables sur lesquelles on travaille (cf ligne 327, commentaires, draft)
 
 ```{r rda-checks}
 #| label: rda-verifications
@@ -747,6 +749,8 @@ pheatmap(r_plot, cluster_rows = TRUE, cluster_cols = TRUE,
 
 #### c-bis) CCA avec Chi2 et toutes les espèces
 
+Proposition de Hugo
+
 ```{r}
 #| label: cca-option
 
@@ -798,7 +802,7 @@ p_cca <- ggplot() +
 p_cca
 ```
 
-CCA sans les espèces avec moins de 5 relevés
+Test de la CCA sans les espèces avec moins de 5 relevés
 
 ```{r}
 #| label: cca-option-sel
