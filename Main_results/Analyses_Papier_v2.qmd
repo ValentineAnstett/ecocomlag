@@ -54,8 +54,8 @@ non_species <- c("algues")  # à supprimer
 
 # Variables environnementales utilisées dans les analyses (RDA, GAM, TBI-LM...)
 env_vars <- c("organic_matter", "ilr_fines_vs_sand", "ilr_clay_vs_silt",
-              "water_level", "Surface", "dist_trait_cote_m", "salinity",
-              "mise_en_eau_num", "duree_assec")
+              "water_level", "Surface", "salinity",
+              "mise_en_eau_num")
 #renommer les variables environmentales pour les graphs 
 vars_env <- c(
   salinity = "Salinity", organic_matter = "Organic matter",
