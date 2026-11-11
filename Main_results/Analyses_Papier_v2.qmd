@@ -84,8 +84,7 @@ dans_bornes <- function(x, var) {                 # TRUE si l'observation est da
   if (is.null(b)) rep(TRUE, length(x)) else !is.na(x) & x >= b[1] & x <= b[2]
 }
 
-# Espèces clés (3 espèces les plus fréquentes présentant un changement significatif)
-especes_signif <- intersect(c("Ruppia.maritima", "Althenia.filiformis", "Lamprothamnium.papulosum"), species_cols)
+
 ```
 
 ```{r data-loading}
@@ -308,7 +307,7 @@ p_dendro_chi <- ggplot() +
 
 p_dendro_chi
 
-#ggsave("figure_cluster_chi2.svg", plot = p_dendro_chi, width = 18, height = 10, units = "in")
+##ggsave("figure_cluster_chi2.svg", plot = p_dendro_chi, width = 18, height = 10, units = "in")
 ```
 
 ::: callout-note
@@ -385,6 +384,8 @@ groupes_df_av <- bind_rows(
 )
 table(groupe = groupes_df_av$groupe, Year = groupes_df_av$Year)
 ```
+
+/!\\ Remmettre les espèces dans le bon ordre pour ce graph
 
 ```{r fig-dendro-bipartite-bray}
 #| label: fig-dendro-bipartite-av
@@ -583,7 +584,7 @@ plot_cca <- function(mod, d, titre) {
 for (nm in names(sets_w)) {
   p <- plot_cca(cca_w[[nm]], sets_w[[nm]]$d, paste0("Ward, all groups, ", nm))
   print(p)
-  ggsave(paste0("figure_cca_ward_", gsub(" \\+ ", "_", nm), ".svg"), plot = p, width = 10, height = 9, units = "in")
+  ##ggsave(paste0("figure_cca_ward_", gsub(" \\+ ", "_", nm), ".svg"), plot = p, width = 10, height = 9, units = "in")
 }
 ```
 
@@ -596,7 +597,7 @@ for (nm in names(sets_w)) {
 for (nm in names(sets_av)) {
   p <- plot_cca(cca_av[[nm]], sets_av[[nm]]$d, paste0("Average, main group, ", nm))
   print(p)
-  ggsave(paste0("figure_cca_average_", gsub(" \\+ ", "_", nm), ".svg"), plot = p, width = 10, height = 9, units = "in")
+  #ggsave(paste0("figure_cca_average_", gsub(" \\+ ", "_", nm), ".svg"), plot = p, width = 10, height = 9, units = "in")
 }
 ```
 
@@ -755,7 +756,7 @@ p_richness <- ggplot(site_wide, aes(x = mean_sp_2020, y = mean_sp_2025, color = 
 
 p_richness
 
-ggsave("figure_richesse_finale.svg", plot = p_richness, width = 6, height = 6, units = "in")
+##ggsave("figure_richesse_finale.svg", plot = p_richness, width = 6, height = 6, units = "in")
 ```
 
 #### b) TBI
@@ -857,8 +858,8 @@ p_tbi_panel <- (p_tbi_site + p_tbi_gp) +
 
 p_tbi_panel
 
-ggsave("figure_tbi_panel_finaleV2.svg", plot = p_tbi_panel, width = 16, height = 9, units = "in")
-ggsave("figure_tbi_panel_finaleV2.png", plot = p_tbi_panel, width = 16, height = 9, units = "in")
+#ggsave("figure_tbi_panel_finaleV2.svg", plot = p_tbi_panel, width = 16, height = 9, units = "in")
+#ggsave("figure_tbi_panel_finaleV2.png", plot = p_tbi_panel, width = 16, height = 9, units = "in")
 ```
 
 On construit ensuite le tableau des variables explicatives : le Delta (2025 - 2020) de chaque variable environnementale, pour chaque lagune.
@@ -1092,6 +1093,9 @@ Un test de Wilcoxon est répété pour chaque espèce : la colonne `p_adj` (corr
 ```{r species-plot}
 #| label: fig-especes-signif
 #| fig-cap: "Abondance par espèce, 2020 vs 2025"
+
+# Espèces clés (3 espèces les plus fréquentes présentant un changement significatif)
+especes_signif <- intersect(c("Ruppia.maritima", "Althenia.filiformis", "Lamprothamnium.papulosum"), species_cols)
 
 df_long <- macro %>%
   filter(Year %in% c(2020, 2025)) %>%
@@ -1387,8 +1391,8 @@ names(p_alth_list) <- vars_pred_alth
 
 p_alth_list$salinity   # exemple : accès à un graphique individuel
 
-# ggsave("alth_panel.svg", plot = p_alth_panel, width = 12, height = 7, units = "in")
-# ggsave("alth_salinity.svg", plot = p_alth_list$salinity, width = 5, height = 4, units = "in")
+# #ggsave("alth_panel.svg", plot = p_alth_panel, width = 12, height = 7, units = "in")
+# #ggsave("alth_salinity.svg", plot = p_alth_list$salinity, width = 5, height = 4, units = "in")
 ```
 
 ### Ruppia
@@ -1627,8 +1631,8 @@ names(p_rup_list) <- vars_pred_rup
 
 p_rup_list$salinity   # exemple : accès à un graphique individuel
 
-# ggsave("rup_panel.svg", plot = p_rup_panel, width = 12, height = 7, units = "in")
-# ggsave("rup_salinity.svg", plot = p_rup_list$salinity, width = 5, height = 4, units = "in")
+# #ggsave("rup_panel.svg", plot = p_rup_panel, width = 12, height = 7, units = "in")
+# #ggsave("rup_salinity.svg", plot = p_rup_list$salinity, width = 5, height = 4, units = "in")
 ```
 
 ### Lamprothamnium
@@ -1932,8 +1936,8 @@ names(p_lampro_list) <- vars_pred_lampro
 
 p_lampro_list$salinity   # exemple : accès à un graphique individuel
 
-# ggsave("lampro_panel.svg", plot = p_lampro_panel, width = 12, height = 7, units = "in")
-# ggsave("lampro_salinity.svg", plot = p_lampro_list$salinity, width = 5, height = 4, units = "in")
+# #ggsave("lampro_panel.svg", plot = p_lampro_panel, width = 12, height = 7, units = "in")
+# #ggsave("lampro_salinity.svg", plot = p_lampro_list$salinity, width = 5, height = 4, units = "in")
 ```
 
 Figure composite : 3 espèces
@@ -1984,5 +1988,5 @@ p_niche_composite <- ggplot(pred_niche_all, aes(x, fit)) +
 
 p_niche_composite
 
-#ggsave("niche_composite.svg", plot = p_niche_composite, width = 16, height = 9, units = "in")
+##ggsave("niche_composite.svg", plot = p_niche_composite, width = 16, height = 9, units = "in")
 ```
