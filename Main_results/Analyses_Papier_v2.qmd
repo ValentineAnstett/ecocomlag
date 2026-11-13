@@ -63,13 +63,14 @@ env_vars <- c("organic_matter", "ilr_fines_vs_sand", "ilr_clay_vs_silt",
 vars_env <- c(
   salinity = "Salinity", organic_matter = "Organic matter",
   ilr_fines_vs_sand = "Fines/Sand ratio", ilr_clay_vs_silt = "Clay/Silt ratio",
-  water_level = "Water level (cm)", Surface = "Surface (m²)", mise_en_eau_num = "Reflooding date (j)"
+  water_level = "Water Column Height (cm)", Surface = "Surface (m²)", mise_en_eau_num = "Reflooding date (j)"
 )
 
 # Noms d'espèces abrégés ("Althenia.filiformis" -> "A. filiformis") : une seule définition
 abbrev_species <- function(x) {
-  parts <- strsplit(gsub("\\.", " ", x), " ")
-  sapply(parts, function(p) paste0(substr(p[1], 1, 1), ". ", paste(p[-1], collapse = " ")))
+  ifelse(grepl("^[A-Z]\\. ", x), x,                     # déjà abrégé : on ne touche pas
+         sapply(strsplit(gsub("\\.", " ", x), " "),
+                function(p) paste0(substr(p[1], 1, 1), ". ", paste(p[-1], collapse = " "))))
 }
 
 # Bornes d'affichage / de prédiction des variables (niche) : salinité limitée à 0-60
@@ -92,7 +93,13 @@ dans_bornes <- function(x, var) {                 # TRUE si l'observation est da
 #| label: chargement-des-donnees
 
 df_all <- read_csv(data_path, show_col_types = FALSE) %>%
-  filter(!(ID_LAG %in% outlier_lagoons))
+  filter(!(ID_LAG %in% outlier_lagoons)) %>%
+  rename(Ruppia.spiralis = Ruppia.cirrhosa)
+
+# Noms d'espèces abrégés ("Althenia.filiformis" -> "A. filiformis") pour TOUT le document
+sp_raw <- setdiff(colnames(df_all), c(meta_cols, env_vars, non_species, non_vars))
+names(df_all)[match(sp_raw, names(df_all))] <- abbrev_species(sp_raw)
+stopifnot(!anyDuplicated(names(df_all)))
 
 df_all_GP = df_all
 df_flore <- df_all_GP
@@ -188,27 +195,16 @@ p_afc <- ggplot() +
 p_afc
 ```
 
-Pour le clustering :
-
-Ward = minimise la variance à l'intérieur des groupes et donne des groupes compacts.
-
-Average (choisi par corrélation cophénétique) = isole des relevés atypiques (un groupe de plus de 100 relevés et les 2 autres groupes de 1 à 5 relevés).
-
-Le choix de Ward est pour essayer d'obtenir des types de communautés interprétables, et non par corrélation cophénétique. Les groupes sont définis par le clustering lui-même, sans test de significativité.
+Pour le clustering, on utilise le lien de Ward : il minimise la variance à l'intérieur des groupes et donne des groupes compacts, donc des types de communautés interprétables. Les groupes sont définis par le clustering lui-même, sans test de significativité.
 
 ```{r hclust-chi2}
 #| label: hclust-chi2
 
-methods_chi <- "ward.D2"       # ou c("complete", "average", "ward.D2") pour un choix par corrélation cophénétique
-coph_chi <- sapply(methods_chi, function(m) cor(dist_chi, cophenetic(hclust(dist_chi, method = m))))
-best_chi <- methods_chi[which.max(coph_chi)]
-hc_chi   <- hclust(dist_chi, method = best_chi)
-fit_chi  <- list(method = best_chi, coph = coph_chi)
-cat("Méthode retenue :", best_chi, "\n"); print(round(coph_chi, 3))
+hc_chi <- hclust(dist_chi, method = "ward.D2")   # clustering hiérarchique, lien de Ward
 
 k_chi      <- 4                                  # nombre de groupes (3 ou 4 donnent des groupes interprétables)
 groups_chi <- cutree(hc_chi, k = k_chi)
-print(table(groups_chi))                         # tailles : regarder s'il y a des groupes de 1 à 5 relevés
+print(table(groups_chi))                         # tailles des groupes
 
 # Table de tous les relevés : clusters 1..k, et groupe 0 = relevés sans aucune espèce
 groupes_df_chi <- bind_rows(
@@ -216,8 +212,6 @@ groupes_df_chi <- bind_rows(
   meta_all_chi[empty_chi, ] %>% mutate(groupe = 0L)
 )
 
-g_main_chi <- as.integer(names(which.max(table(groups_chi))))   # groupe principal = le plus nombreux
-cat("Groupe principal :", g_main_chi, "\n")
 table(groupe = groupes_df_chi$groupe, Year = groupes_df_chi$Year)
 ```
 
@@ -241,18 +235,14 @@ freq_chi                                          # % des relevés du groupe où
 
 Cette figure représente le dendrogramme des relevés avec, en dessous, un réseau bipartite reliant chaque relevé aux espèces qu'il contient (épaisseur du trait = abondance).
 
-```{r fig-dendro-bipartite}
-#| label: fig-dendro-bipartite
+```{r label: fig-dendro-bipartite}
 #| fig-cap: "Clustering des relevés (distance du chi²) et réseau bipartite espèces-relevés"
 
 stopifnot(k_chi <= 4)    # palette et formes définies pour 4 groupes au maximum
 
 # Ordre manuel des espèces (affichage uniquement) ; les espèces rares retirées ne sont pas affichées
-sp_order_opt <- c(
-  "Ruppia.cirrhosa", "Riella.helicophylla", "Tolypella.salina",
-   "Ruppia.maritima", "Althenia.filiformis", "Lamprothamnium.papulosum",
-   "Chara.canescens"
-)
+sp_order_opt <- c("R. spiralis", "R. helicophylla", "T. salina", "R. maritima", "A. filiformis", "L. papulosum", "C. canescens")
+
 sp_order_chi <- intersect(sp_order_opt, colnames(comm_chi))
 stopifnot(setequal(colnames(comm_chi), sp_order_chi))
 comm_chi_ord <- comm_chi[, sp_order_chi, drop = FALSE]    # copie réordonnée ; comm_chi n'est pas modifié
@@ -298,12 +288,12 @@ p_dendro_chi <- ggplot() +
     aes(x_plot, y_plot, shape = group, fill = group),
     size = 5, color = "black", stroke = 0.9
   ) +
-  geom_text(data = sp_pos_chi, aes(x_plot, y_plot - 0.3 * h_chi, label = abbrev_species()), size = 7) +
+  geom_text(data = sp_pos_chi, aes(x_plot, y_plot - 0.3 * h_chi, label = species), size = 5)  +
   scale_shape_manual(values = shp_chi, name = "Cluster") +
   scale_fill_manual(values = col_chi, name = "Cluster") +
   scale_linewidth(range = c(0.2, 2.5)) +
   labs(y = paste0(c(chi.square = "Chi-square", hellinger = "Hellinger")[[dist_metric]], " distance")) +
-  theme_minimal(base_size = 18) +
+  theme_minimal(base_size = 20) +
   theme(axis.text = element_blank(), axis.title.x = element_blank(), panel.grid = element_blank())
 
 p_dendro_chi
@@ -361,87 +351,67 @@ ggplot(indval_tab, aes(x = reorder(species, stat), y = stat)) +
   theme_minimal()
 ```
 
-#### a-ter) CCA sur tous les groupes du clustering Ward, et CCA bis sur le groupe principal du clustering average (sans effet Site)
+#### a-bis) CCA sur les relevés du clustering Ward (sans effet Site)
 
-Deux séries de trois CCA (2020 seul, 2025 seul, 2020 + 2025), sans effet Site :
 
-\- CCA avec suffixe \`\_w\` : tous les relevés non vides du clustering chi²/Ward, tous groupes confondus (le groupe 0 est exclu).
-
-\- CCA bis avec suffixe \`\_av\` : seulement le groupe principal (le plus nombreux) du clustering chi²/average.
-
-```{r cca-gp-data}
+```{r cca-data}
 #| label: cca-data
 
-min_occ_cca     <- 1                    # espèces présentes dans moins de min_occ_cca relevés du sous-échantillon : retirées
+min_occ_cca     <- 1                    # espèces présentes dans moins de min_occ_cca relevés du jeu : retirées
 vars_cca        <- names(vars_env)      # variables explicatives (à réduire si peu de relevés)
 nperm_cca       <- 999
 perm_blocks_cca <- FALSE                # TRUE = permutations au sein de chaque lagune pour le jeu 2020 + 2025
 
-# Environnement + recouvrements de TOUTES les espèces, relevés complets uniquement (copie)
-df_cca_base <- df_merged_final %>%
-  dplyr::select(ID_LAG, Year, all_of(species_cols), all_of(vars_cca)) %>%
+# Relevés du clustering Ward (sans le groupe 0) + environnement + recouvrements de toutes les espèces
+df_cca <- groupes_df_chi %>%
+  filter(groupe > 0) %>%
+  inner_join(df_merged_final %>% dplyr::select(ID_LAG, Year, all_of(species_cols), all_of(vars_cca)),
+             by = c("ID_LAG", "Year")) %>%
   filter(complete.cases(across(all_of(vars_cca))))
 
+# Prépare un jeu : espèces conservées, relevés non vides, variables standardisées
 prep_cca <- function(df) {
   occ <- colSums(df[, species_cols] > 0)
   sp  <- names(occ)[occ >= min_occ_cca]
-  d   <- df[rowSums(df[, sp, drop = FALSE]) > 0, ]                  # relevés devenus vides : exclus
+  d   <- df[rowSums(df[, sp, drop = FALSE]) > 0, ]
   list(d = d, species = sp, Y = as.data.frame(d[, sp]),
-       X = as.data.frame(scale(d[, vars_cca])))                      # variables standardisées
+       X = as.data.frame(scale(d[, vars_cca])))
 }
 
-# Les trois jeux (2020, 2025, 2020 + 2025) à partir d'une table (ID_LAG, Year, groupe)
-make_sets <- function(grp_df) {
-  df <- grp_df %>% inner_join(df_cca_base, by = c("ID_LAG", "Year"))
-  list("2020"        = prep_cca(df %>% filter(Year == 2020)),
-       "2025"        = prep_cca(df %>% filter(Year == 2025)),
-       "2020 + 2025" = prep_cca(df))
-}
+sets_cca <- list("2020"        = prep_cca(df_cca %>% filter(Year == 2020)),
+                 "2025"        = prep_cca(df_cca %>% filter(Year == 2025)),
+                 "2020 + 2025" = prep_cca(df_cca))
 
-# CCA : tous les groupes Ward (sans le groupe 0)
-sets_w <- make_sets(groupes_df_chi %>% filter(groupe > 0))
-
-# CCA bis : groupe principal du clustering average
-g_main_av <- as.integer(names(which.max(table(groups_av))))
-cat("Groupe principal (average) :", g_main_av, "\n")
-sets_av <- make_sets(groupes_df_av %>% filter(groupe == g_main_av))
-
-effectifs_cca <- function(sets) data.frame(jeu = names(sets),
-  releves = sapply(sets, function(x) nrow(x$d)),
-  lagunes = sapply(sets, function(x) n_distinct(x$d$ID_LAG)),
-  especes = sapply(sets, function(x) length(x$species)))
-effectifs_cca(sets_w)
-effectifs_cca(sets_av)
+data.frame(jeu = names(sets_cca),
+           releves = sapply(sets_cca, function(x) nrow(x$d)),
+           lagunes = sapply(sets_cca, function(x) n_distinct(x$d$ID_LAG)),
+           especes = sapply(sets_cca, function(x) length(x$species)))
 ```
 
-Ici résultrats des CCA de Ward et Average sur 2020, 2025 et les deux années
+Ajustement des CCA et tests de permutation (modèle global, puis variable par variable).
 
-```{r cca-gp-fit}
+```{r cca-fit}
 #| label: cca-fit
 
-fit_cca <- function(sets, titre) {
-  stopifnot(all(sapply(sets, function(x) length(x$species) >= 3)))   # au moins 3 espèces pour 2 axes
-  mods <- lapply(sets, function(s) cca(s$Y ~ ., data = s$X))
-  for (nm in names(sets)) {
-    mod  <- mods[[nm]]
-    perm <- if (nm == "2020 + 2025" && perm_blocks_cca)
-              how(blocks = factor(sets[[nm]]$d$ID_LAG), nperm = nperm_cca) else how(nperm = nperm_cca)
-    cat("\n=====", titre, "|", nm, "=====\n")
-    cat("Part de l'inertie expliquée :", round(mod$CCA$tot.chi / (mod$CCA$tot.chi + mod$CA$tot.chi), 3), "\n")
-    print(withr::with_seed(123, anova(mod, permutations = perm)))                 # test global
-    print(withr::with_seed(123, anova(mod, by = "term", permutations = perm)))    # test par variable
-    print(vif.cca(mod))
-  }
-  mods
-}
+stopifnot(all(sapply(sets_cca, function(x) length(x$species) >= 3)))   # au moins 3 espèces pour 2 axes
 
-cca_w  <- fit_cca(sets_w,  "Ward, all groups")
-cca_av <- fit_cca(sets_av, "Average, main group")
+cca_models <- lapply(sets_cca, function(s) cca(s$Y ~ ., data = s$X))
+
+for (nm in names(sets_cca)) {
+  mod  <- cca_models[[nm]]
+  perm <- if (nm == "2020 + 2025" && perm_blocks_cca)
+            how(blocks = factor(sets_cca[[nm]]$d$ID_LAG), nperm = nperm_cca) else how(nperm = nperm_cca)
+  cat("\n=====", nm, "=====\n")
+  cat("Part de l'inertie expliquée :", round(mod$CCA$tot.chi / (mod$CCA$tot.chi + mod$CA$tot.chi), 3), "\n")
+  print(withr::with_seed(123, anova(mod, permutations = perm)))                 # test global
+  print(withr::with_seed(123, anova(mod, by = "term", permutations = perm)))    # test par variable
+  print(vif.cca(mod))
+}
 ```
 
-Les trois CCA sont représentées une par une.
+Les trois CCA sont représentées une par une : relevés colorés par année, espèces en vert, variables environnementales en orange (flèches mises à l'échelle des espèces).
 
-```{r fig-cca-gp-fun}
+```{r cca-plot-fun}
 #| label: cca-plot-fun
 
 plot_cca <- function(mod, d, titre) {
@@ -458,8 +428,9 @@ plot_cca <- function(mod, d, titre) {
 
   ggplot() +
     geom_hline(yintercept = 0, colour = "grey70") + geom_vline(xintercept = 0, colour = "grey70") +
-    geom_point(data = sc_site, aes(CCA1, CCA2, colour = Year), size = 2.5, alpha = 0.6) +
+     geom_point(data = sc_site, aes(CCA1, CCA2, colour = Year, shape = Year), size = 3, alpha = 0.7) +
     scale_colour_manual(values = c("2020" = "#0072B2", "2025" = "#CC79A7"), name = "Year") +
+    scale_shape_manual(values = c("2020" = 16, "2025" = 15), name = "Year") +
     geom_segment(data = sc_env, aes(x = 0, y = 0, xend = x, yend = y),
                  arrow = arrow(length = unit(0.25, "cm")), colour = "#E69F00") +
     geom_text_repel(data = sc_env, aes(x, y, label = Var), colour = "#E69F00", size = 6,
@@ -474,64 +445,168 @@ plot_cca <- function(mod, d, titre) {
 }
 ```
 
-```{r fig-cca-w}
-#| label: fig-cca-w
-#| fig-cap: "CCA sur tous les groupes du clustering Ward : 2020, 2025, 2020 + 2025"
+```{r fig-cca}
+#| label: fig-cca
+#| fig-cap: "CCA sur les relevés du clustering Ward : 2020, 2025, 2020 + 2025"
 #| fig-width: 10
 #| fig-height: 9
 
-for (nm in names(sets_w)) {
-  p <- plot_cca(cca_w[[nm]], sets_w[[nm]]$d, paste0("Ward, all groups, ", nm))
+for (nm in names(sets_cca)) {
+  p <- plot_cca(cca_models[[nm]], sets_cca[[nm]]$d, paste0("Ward, ", nm))
   print(p)
-  ##ggsave(paste0("figure_cca_ward_", gsub(" \\+ ", "_", nm), ".svg"), plot = p, width = 10, height = 9, units = "in")
+  # ggsave(paste0("figure_cca_ward_", gsub(" \\+ ", "_", nm), ".svg"), plot = p, width = 10, height = 9, units = "in")
 }
 ```
 
-```{r fig-cca-av}
-#| label: fig-cca-av
-#| fig-cap: "CCA bis sur le groupe principal du clustering average : 2020, 2025, 2020 + 2025"
+```{r}
+#| label: cca-ellipses-sites
+#| fig-cap: "CCA avec ellipses par site"
 #| fig-width: 10
 #| fig-height: 9
 
-for (nm in names(sets_av)) {
-  p <- plot_cca(cca_av[[nm]], sets_av[[nm]]$d, paste0("Average, main group, ", nm))
+jeux_ell <- names(sets_cca)        # ex. "2020 + 2025" seulement, ou c("2020", "2025")
+
+site_lookup <- macro %>% dplyr::distinct(ID_LAG, Year, Site)
+
+for (nm in jeux_ell) {
+  mod <- cca_models[[nm]]
+  d   <- sets_cca[[nm]]$d
+
+  # Scores des relevés (mêmes scores que dans plot_cca) + site de chaque relevé
+  sc_ell <- as.data.frame(scores(mod, display = "lc", scaling = 2, choices = 1:2))
+  sc_ell$Site <- site_lookup$Site[match(paste(d$ID_LAG, d$Year), paste(site_lookup$ID_LAG, site_lookup$Year))]
+
+  # Centroïdes pour étiqueter chaque site
+  cent_ell <- sc_ell %>% group_by(Site) %>%
+    summarise(CCA1 = mean(CCA1), CCA2 = mean(CCA2), .groups = "drop")
+
+  p <- plot_cca(mod, d, paste0("Ward, ", nm, " (site ellipses)")) +
+    stat_ellipse(data = sc_ell, aes(CCA1, CCA2, group = Site),
+                 inherit.aes = FALSE, type = "norm", level = 0.8,      # ellipse contenant ~80 % des relevés du site
+                 colour = "grey30", linewidth = 0.7, linetype = "dashed") +
+    geom_label(data = cent_ell, aes(CCA1, CCA2, label = Site),
+               inherit.aes = FALSE, size = 5, fontface = "bold", alpha = 0.7, label.size = 0)
   print(p)
-  #ggsave(paste0("figure_cca_average_", gsub(" \\+ ", "_", nm), ".svg"), plot = p, width = 10, height = 9, units = "in")
+  # ggsave(paste0("figure_cca_ellipses_", gsub(" \\+ ", "_", nm), ".svg"), plot = p, width = 10, height = 9, units = "in")
 }
 ```
 
-La heatmap des corrélations de Spearman (recouvrement brut de chaque espèce × chaque variable)
+
+```{r}
+#| label: cca-sans-spiralis-salina
+#| fig-cap: "CCA sans R. spiralis et T. salina : 2020, 2025, 2020 + 2025"
+#| fig-width: 10
+#| fig-height: 9
+
+sp_excl_sx <- c("R. spiralis", "T. salina")               # espèces retirées
+sp_sx      <- setdiff(species_cols, sp_excl_sx)
+
+prep_cca_sx <- function(df) {
+  occ <- colSums(df[, sp_sx] > 0)
+  sp  <- names(occ)[occ >= min_occ_cca]
+  d   <- df[rowSums(df[, sp, drop = FALSE]) > 0, ]         # relevés devenus vides : exclus
+  list(d = d, species = sp, Y = as.data.frame(d[, sp]),
+       X = as.data.frame(scale(d[, vars_cca])))
+}
+
+sets_sx <- list("2020"        = prep_cca_sx(df_cca %>% filter(Year == 2020)),
+                "2025"        = prep_cca_sx(df_cca %>% filter(Year == 2025)),
+                "2020 + 2025" = prep_cca_sx(df_cca))
+
+print(data.frame(jeu = names(sets_sx),
+                 releves = sapply(sets_sx, function(x) nrow(x$d)),
+                 lagunes = sapply(sets_sx, function(x) n_distinct(x$d$ID_LAG)),
+                 especes = sapply(sets_sx, function(x) length(x$species))))
+stopifnot(all(sapply(sets_sx, function(x) length(x$species) >= 3)))
+
+cca_sx <- lapply(sets_sx, function(s) cca(s$Y ~ ., data = s$X))
+
+for (nm in names(sets_sx)) {
+  mod  <- cca_sx[[nm]]
+  perm <- if (nm == "2020 + 2025" && perm_blocks_cca)
+            how(blocks = factor(sets_sx[[nm]]$d$ID_LAG), nperm = nperm_cca) else how(nperm = nperm_cca)
+  cat("\n=====", nm, "(sans R. spiralis ni T. salina) =====\n")
+  cat("Part de l'inertie expliquée :", round(mod$CCA$tot.chi / (mod$CCA$tot.chi + mod$CA$tot.chi), 3), "\n")
+  print(withr::with_seed(123, anova(mod, permutations = perm)))                 # test global
+  print(withr::with_seed(123, anova(mod, by = "term", permutations = perm)))    # test par variable
+  print(vif.cca(mod))
+
+  p <- plot_cca(mod, sets_sx[[nm]]$d, paste0("Ward, ", nm, " (without R. spiralis, T. salina)"))
+  print(p)
+  # ggsave(paste0("figure_cca_sans_sp_sal_", gsub(" \\+ ", "_", nm), ".svg"), plot = p, width = 10, height = 9, units = "in")
+}
+```
+
+
+
+
+
+
+Heatmap des corrélations de Spearman entre le recouvrement brut de chaque espèce et chaque variable environnementale, sur les relevés d'un jeu de la CCA (`jeu_heat`). Pour le jeu 2020 + 2025, les lagunes sont répétées : les p-values sont indicatives.
 
 ```{r fig-cca-heatmap}
 #| label: fig-cca-heatmap
 #| fig-cap: "Corrélation de Spearman espèces / variables environnementales (* p<.05, ** p<.01, *** p<.001)"
 
-jeu_heat <- "2020 + 2025"
+jeu_heat <- "2020 + 2025"             # ou "2020", "2025"
+s_heat <- sets_cca[[jeu_heat]]
+Y_heat <- s_heat$Y
+X_heat <- as.data.frame(s_heat$d[, vars_cca])           # variables non standardisées
 
-heatmap_cca <- function(s, titre) {
-  Y <- s$Y
-  X <- as.data.frame(s$d[, vars_cca])                    # variables non standardisées
-  r <- matrix(NA_real_, nrow = ncol(Y), ncol = ncol(X), dimnames = list(colnames(Y), colnames(X)))
-  p <- r
-  for (sp in colnames(Y)) for (ev in colnames(X)) {
-    test <- suppressWarnings(cor.test(Y[[sp]], X[[ev]], method = "spearman"))
-    r[sp, ev] <- test$estimate; p[sp, ev] <- test$p.value
-  }
-  stars <- ifelse(p < 0.001, "***", ifelse(p < 0.01, "**", ifelse(p < 0.05, "*", "")))
-  lab   <- matrix(paste0(round(r, 2), stars), nrow = nrow(r), dimnames = dimnames(r))
-  rownames(r) <- rownames(lab) <- abbrev_species(rownames(r))
-  colnames(r) <- colnames(lab) <- vars_env[colnames(r)]
-  cat(titre, ":", nrow(Y), "relevés |", ncol(Y), "espèces\n")
-  pheatmap(r, main = titre, cluster_rows = nrow(r) > 2, cluster_cols = TRUE,
-           display_numbers = lab, fontsize_number = 10,
-           fontsize = 12, fontsize_row = 14, fontsize_col = 12, angle_col = 45,
-           color = colorRampPalette(rev(RColorBrewer::brewer.pal(11, "PuOr")))(100),
-           breaks = seq(-1, 1, length.out = 101))
+r_heat <- matrix(NA_real_, nrow = ncol(Y_heat), ncol = ncol(X_heat),
+                 dimnames = list(colnames(Y_heat), colnames(X_heat)))
+p_heat <- r_heat
+for (sp in colnames(Y_heat)) for (ev in colnames(X_heat)) {
+  test <- suppressWarnings(cor.test(Y_heat[[sp]], X_heat[[ev]], method = "spearman"))
+  r_heat[sp, ev] <- test$estimate; p_heat[sp, ev] <- test$p.value
+}
+stars_heat  <- ifelse(p_heat < 0.001, "***", ifelse(p_heat < 0.01, "**", ifelse(p_heat < 0.05, "*", "")))
+labels_heat <- matrix(paste0(round(r_heat, 2), stars_heat), nrow = nrow(r_heat), dimnames = dimnames(r_heat))
+
+rownames(r_heat) <- rownames(labels_heat) <- abbrev_species(rownames(r_heat))
+colnames(r_heat) <- colnames(labels_heat) <- vars_env[colnames(r_heat)]
+
+cat("Jeu :", jeu_heat, "|", nrow(Y_heat), "relevés |", ncol(Y_heat), "espèces\n")
+
+pheatmap(r_heat, cluster_rows = nrow(r_heat) > 2, cluster_cols = TRUE,
+         display_numbers = labels_heat, fontsize_number = 10,
+         fontsize = 12, fontsize_row = 14, fontsize_col = 12, angle_col = 45,
+         color = colorRampPalette(rev(RColorBrewer::brewer.pal(11, "PuOr")))(100),
+         breaks = seq(-1, 1, length.out = 101))
+```
+
+Test heatma p sur groupes de cluster 
+```{r}
+#| label: fig-heatmap-groupes
+#| fig-cap: "Corrélation de Spearman groupes du clustering / variables environnementales (* p<.05, ** p<.01, *** p<.001)"
+
+d_gh <- sets_cca[["2020 + 2025"]]$d          # relevés de la CCA, avec leur groupe Ward (colonne 'groupe')
+grp_gh <- sort(unique(d_gh$groupe))
+n_gh   <- table(d_gh$groupe)
+
+r_gh <- matrix(NA_real_, nrow = length(grp_gh), ncol = length(vars_cca),
+               dimnames = list(paste0("G", grp_gh, " (n = ", n_gh[as.character(grp_gh)], ")"), vars_cca))
+p_gh <- r_gh
+
+for (i in seq_along(grp_gh)) for (ev in vars_cca) {
+  # Appartenance au groupe (0/1) contre la variable : corrélation de Spearman
+  test <- suppressWarnings(cor.test(as.numeric(d_gh$groupe == grp_gh[i]), d_gh[[ev]], method = "spearman"))
+  r_gh[i, ev] <- test$estimate
+  p_gh[i, ev] <- test$p.value
 }
 
-heatmap_cca(sets_w[[jeu_heat]],  paste0("Ward, all groups, ", jeu_heat))
-heatmap_cca(sets_av[[jeu_heat]], paste0("Average, main group, ", jeu_heat))
+stars_gh  <- ifelse(p_gh < 0.001, "***", ifelse(p_gh < 0.01, "**", ifelse(p_gh < 0.05, "*", "")))
+labels_gh <- matrix(paste0(round(r_gh, 2), stars_gh), nrow = nrow(r_gh), dimnames = dimnames(r_gh))
+colnames(r_gh) <- colnames(labels_gh) <- vars_env[colnames(r_gh)]
+
+pheatmap(r_gh, cluster_rows = FALSE, cluster_cols = TRUE,
+         display_numbers = labels_gh, fontsize_number = 10,
+         fontsize = 12, fontsize_row = 14, fontsize_col = 12, angle_col = 45,
+         color = colorRampPalette(rev(RColorBrewer::brewer.pal(11, "PuOr")))(100),
+         breaks = seq(-1, 1, length.out = 101))
 ```
+
+
 
 #### b)PERMANOVA appariée - Composition globale : effet Site et Année
 
@@ -994,7 +1069,7 @@ Un test de Wilcoxon est répété pour chaque espèce : la colonne `p_adj` (corr
 #| fig-cap: "Abondance par espèce, 2020 vs 2025"
 
 # Espèces clés (3 espèces les plus fréquentes présentant un changement significatif)
-especes_signif <- intersect(c("Ruppia.maritima", "Althenia.filiformis", "Lamprothamnium.papulosum"), species_cols)
+especes_signif <- intersect(c("R. maritima", "A. filiformis", "L. papulosum"), species_cols)
 
 df_long <- macro %>%
   filter(Year %in% c(2020, 2025)) %>%
@@ -1017,18 +1092,17 @@ ggplot(df_long, aes(Espece, Abondance, fill = factor(Year))) +
 data_mod <- df_flore %>%
   filter(!(ID_LAG %in% outlier_lagoons)) %>%
   dplyr::select("Year", "Site", "ID_LAG",
-         "Althenia.filiformis", "Lamprothamnium.papulosum", "Ruppia.maritima",
+         "A. filiformis", "L. papulosum", "R. maritima",
          "organic_matter", "ilr_fines_vs_sand", "ilr_clay_vs_silt", "water_level",
          "Surface", "salinity", "mise_en_eau_num") %>%
 
   # Salinité bornée entre 0 et 60 : les relevés hors de cette plage sont exclus des modèles de niche
   filter(is.na(salinity) | (salinity >= bornes_env$salinity[1] & salinity <= bornes_env$salinity[2])) %>%
 
-  mutate(across(c(Althenia.filiformis, Lamprothamnium.papulosum, Ruppia.maritima),
-                ~replace_na(.x, 0))) %>%
-  mutate(Althenia.filiformis       = round(Althenia.filiformis * 20),
-         Lamprothamnium.papulosum  = round(Lamprothamnium.papulosum * 20),
-         Ruppia.maritima           = round(Ruppia.maritima * 20))
+  mutate(across(c(`A. filiformis`, `L. papulosum`, `R. maritima`), ~replace_na(.x, 0))) %>%
+mutate(`A. filiformis`  = round(`A. filiformis` * 20),
+       `L. papulosum`   = round(`L. papulosum` * 20),
+       `R. maritima`    = round(`R. maritima` * 20))
 ```
 
 ### Distribution globale des données
@@ -1057,7 +1131,7 @@ Je te laisse regarder, pour moi le plus gros problème est que surface a une lon
 
 ```{r}
 data_alth_all <- data_mod %>%
-  dplyr::select(-c("Lamprothamnium.papulosum", "Ruppia.maritima"))
+  dplyr::select(-c("L. papulosum", "R. maritima"))
 
 data_alth_all %>%
   group_by(ID_LAG) %>%
@@ -1070,7 +1144,7 @@ data_alth <- data_alth_all %>%
   ungroup() %>%
   filter(dif) %>%
   dplyr::select(-dif) %>%
-  rename(espece = Althenia.filiformis) %>%
+  rename(espece = `A. filiformis`) %>%
   mutate(Year = factor(Year), Site = factor(Site), ID_LAG = factor(ID_LAG))
 
 
@@ -1204,8 +1278,9 @@ plot(m_alth)
 #| label: alth-predictions
 
 # --- Paramètres---
-vars_pred_alth <- c("organic_matter", "ilr_fines_vs_sand", "water_level",
-                    "salinity", "mise_en_eau_num")
+vars_pred_alth <- c("organic_matter", "ilr_fines_vs_sand", "ilr_clay_vs_silt",
+              "water_level", "salinity",
+              "mise_en_eau_num")
 year_ref_alth  <- "2025"   # année de référence des prédictions 
 n_pts_alth     <- 200      # nombre de points par courbe
 
@@ -1216,8 +1291,8 @@ med_alth <- sapply(data_alth[, env_vars], median, na.rm = TRUE)
 predict_curve_alth <- function(var, model = m_alth, data = data_alth) {
 
   # Grille de la variable d'intérêt, sur son étendue observée
-  x_seq <- seq(min(data[[var]], na.rm = TRUE),
-               max(data[[var]], na.rm = TRUE),
+  x_seq <- seq(quantile(data[[var]], 0.05, na.rm = TRUE),
+               quantile(data[[var]], 0.95, na.rm = TRUE),
                length.out = n_pts_alth)
 
   # Table de prédiction
@@ -1300,7 +1375,7 @@ p_alth_list$salinity   # exemple : accès à un graphique individuel
 
 ```{r}
 data_rup_all <- data_mod %>%
-  dplyr::select(-c("Lamprothamnium.papulosum", "Althenia.filiformis"))
+  dplyr::select(-c("L. papulosum", "A. filiformis"))
 
 data_rup_all %>%
   group_by(ID_LAG) %>%
@@ -1313,7 +1388,7 @@ data_rup <- data_rup_all %>%
   ungroup() %>%
   filter(dif) %>%
   dplyr::select(-dif) %>%
-  rename(espece = Ruppia.maritima) %>%
+  rename(espece = `R. maritima`) %>%
   mutate(Year = factor(Year), Site = factor(Site), ID_LAG = factor(ID_LAG))
 
 ```
@@ -1444,8 +1519,9 @@ plot(m_rup)
 #| label: rup-predictions
 
 # --- Paramètres---
-vars_pred_rup <- c("organic_matter", "ilr_fines_vs_sand", "water_level",
-                    "salinity", "mise_en_eau_num")
+vars_pred_rup <- c("organic_matter", "ilr_fines_vs_sand", "ilr_clay_vs_silt",
+              "water_level", "salinity",
+              "mise_en_eau_num")
 year_ref_rup  <- "2025"   # année de référence des prédictions 
 n_pts_rup     <- 200      # nombre de points par courbe
 
@@ -1456,8 +1532,8 @@ med_rup <- sapply(data_rup[, env_vars], median, na.rm = TRUE)
 predict_curve_rup <- function(var, model = m_rup, data = data_rup) {
 
   # Grille de la variable d'intérêt, sur son étendue observée
-  x_seq <- seq(min(data[[var]], na.rm = TRUE),
-               max(data[[var]], na.rm = TRUE),
+  x_seq <- seq(quantile(data[[var]], 0.05, na.rm = TRUE),
+               quantile(data[[var]], 0.95, na.rm = TRUE),
                length.out = n_pts_rup)
 
   # Table de prédiction
@@ -1540,7 +1616,7 @@ p_rup_list$salinity   # exemple : accès à un graphique individuel
 
 ```{r}
 data_lampro_all <- data_mod %>%
-  dplyr::select(-c("Ruppia.maritima", "Althenia.filiformis"))
+  dplyr::select(-c("R. maritima", "A. filiformis"))
 
 data_lampro_all %>%
   group_by(ID_LAG) %>%
@@ -1553,7 +1629,7 @@ data_lampro <- data_lampro_all %>%
   ungroup() %>%
   filter(dif) %>%
   dplyr::select(-dif) %>%
-  rename(espece = Lamprothamnium.papulosum) %>%
+  rename(espece = `L. papulosum`) %>%
   mutate(Year = factor(Year), Site = factor(Site), ID_LAG = factor(ID_LAG))
 
 ```
@@ -1617,7 +1693,7 @@ ggplot(data = data_lampro, aes(x = mise_en_eau_num, y = espece)) +
 ```
 
 ```{r}
-## Modélisation de la niche d'Althenia filiformis
+## Modélisation de la niche de Lampro 
 # Fit du modèle
 m_lampro= gam(
   cbind(espece, 20 - espece) ~
@@ -1760,10 +1836,10 @@ med_lampro <- sapply(data_lampro[, env_vars], median, na.rm = TRUE)
 # --- Fonction : courbe de niche pour UNE variable, les 8 autres fixées à leur médiane ---
 predict_curve_lampro <- function(var, model = m_lampro, data = data_lampro) {
 
-  # Grille de la variable d'intérêt, sur son étendue observée
-  x_seq <- seq(min(data[[var]], na.rm = TRUE),
-               max(data[[var]], na.rm = TRUE),
-               length.out = n_pts_rup)
+  # Grille de la variable d'intérêt, sur 95% de la distribution 
+  x_seq <- seq(quantile(data[[var]], 0.05, na.rm = TRUE),
+               quantile(data[[var]], 0.95, na.rm = TRUE),
+               length.out = n_pts_lampro)
 
   # Table de prédiction
   nd_lampro <- as.data.frame(as.list(med_lampro))[rep(1, n_pts_lampro), ]
@@ -1841,11 +1917,14 @@ p_lampro_list$salinity   # exemple : accès à un graphique individuel
 
 Figure composite : 3 espèces
 
-```{r}
+
+```{r} 
 #| label: niche-composite
 
 # Étiquettes et couleurs par espèce (palette colorblind)
-sp_niche  <- c(alth = "Althenia filiformis", rup = "Ruppia maritima", lampro = "Lamprothamnium papulosum")
+sp_niche  <- c(alth   = abbrev_species("Althenia.filiformis"),
+               rup    = abbrev_species("Ruppia.maritima"),
+               lampro = abbrev_species("Lamprothamnium.papulosum"))
 col_niche <- setNames(c("#009E73", "#0072B2", "#E69F00"), sp_niche)
 
 # Ordre des colonnes (à modifier librement) : doit contenir TOUTES les variables tracées
@@ -1869,23 +1948,80 @@ rug_niche_all <- bind_rows(
   mutate(espece = factor(espece, levels = sp_niche),
          variable_label = factor(as.character(variable_label), levels = lev_cols_niche))
 
-p_niche_composite <- ggplot(pred_niche_all, aes(x, fit)) +
-  geom_ribbon(aes(ymin = lwr, ymax = upr, fill = espece), alpha = 0.2) +      # IC à 95 %
-  geom_line(aes(colour = espece), linewidth = 1.2) +                           # courbe de niche
-  geom_rug(data = rug_niche_all, aes(x = x), inherit.aes = FALSE,
-           alpha = 0.25, linewidth = 0.3) +                                    # observations
-  facet_grid(espece ~ variable_label, scales = "free_x",
-             labeller = labeller(variable_label = label_wrap_gen(14))) +
-  scale_colour_manual(values = col_niche, guide = "none") +
-  scale_fill_manual(values = col_niche, guide = "none") +
-  scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
-  labs(x = NULL, y = "Predicted frequency") +
-  theme_bw(base_size = 14) +
-  theme(panel.grid = element_blank(),
-        strip.text.x = element_text(size = 12),
-        strip.text.y = element_text(size = 14, face = "italic"))
+# Le rug est limité à la plage de chaque courbe (même 95 % que les prédictions)
+plage_niche <- pred_niche_all %>%
+  group_by(espece, variable_label) %>%
+  summarise(xmin = min(x), xmax = max(x), .groups = "drop")
 
-p_niche_composite
+rug_niche_all <- rug_niche_all %>%
+  left_join(plage_niche, by = c("espece", "variable_label")) %>%
+  filter(x >= xmin, x <= xmax) %>%
+  dplyr::select(-xmin, -xmax)
 
-##ggsave("niche_composite.svg", plot = p_niche_composite, width = 16, height = 9, units = "in")
+# Fonction : la figure composite pour un sous-ensemble de variables
+plot_niche_composite <- function(vars) {
+  labs_v <- unname(vars_env[vars])
+  ggplot(dplyr::filter(pred_niche_all, variable_label %in% labs_v) %>%
+           mutate(variable_label = factor(as.character(variable_label), levels = labs_v)),
+         aes(x, fit)) +
+    geom_ribbon(aes(ymin = lwr, ymax = upr, fill = espece), alpha = 0.2) +      # IC à 95 %
+    geom_line(aes(colour = espece), linewidth = 1.2) +                           # courbe de niche
+    geom_rug(data = dplyr::filter(rug_niche_all, variable_label %in% labs_v) %>%
+               mutate(variable_label = factor(as.character(variable_label), levels = labs_v)),
+             aes(x = x), inherit.aes = FALSE, alpha = 0.25, linewidth = 0.3) +   # observations
+    facet_grid(espece ~ variable_label, scales = "free_x",
+               labeller = labeller(variable_label = label_wrap_gen(14))) +
+    scale_colour_manual(values = col_niche, guide = "none") +
+    scale_fill_manual(values = col_niche, guide = "none") +
+    scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+    labs(x = NULL, y = "Predicted frequency") +
+    theme_bw(base_size = 14) +
+    theme(panel.grid = element_blank(),
+          strip.text.x = element_text(size = 12),
+          strip.text.y = element_text(size = 14, face = "italic"))
+}
+
+# Figure 1 : date de remise en eau, hauteur d'eau, salinité
+p_niche_composite_1 <- plot_niche_composite(c("mise_en_eau_num", "water_level", "salinity"))
+p_niche_composite_1
+
+# Figure 2 : sédiment et matière organique
+p_niche_composite_2 <- plot_niche_composite(c("ilr_fines_vs_sand", "organic_matter", "ilr_clay_vs_silt"))
+p_niche_composite_2
+
+##ggsave("niche_composite_1.svg", plot = p_niche_composite_1, width = 11, height = 9, units = "in")
+##ggsave("niche_composite_2.svg", plot = p_niche_composite_2, width = 11, height = 9, units = "in")
 ```
+
+```{r}
+#| label: niche-signif
+
+modeles_niche_gp <- list("A. filiformis" = m_alth, "R. maritima" = m_rup, "L. papulosum" = m_lampro)
+
+# Table des termes lissés de chaque modèle : edf, statistique, p-value
+tab_signif <- bind_rows(lapply(names(modeles_niche_gp), function(sp) {
+  st <- as.data.frame(summary(modeles_niche_gp[[sp]])$s.table)
+  st$terme   <- rownames(st)
+  st$espece  <- sp
+  st
+})) %>%
+  rename(edf = edf, p = `p-value`) %>%
+  filter(!terme %in% c("s(Site)", "s(ID_LAG)")) %>%                 # effets aléatoires : exclus
+  mutate(variable = sub("^s\\((log\\()?([A-Za-z_]+)\\)?(, .*)?\\)$", "\\2", terme),
+         variable = sub("\\)$", "", variable))                       # "s(log(Surface))" -> "Surface"
+
+# Correction pour tests multiples (une p-value par espèce x variable)
+tab_signif <- tab_signif %>%
+  mutate(p_adj = p.adjust(p, method = "BH"),
+         signif = ifelse(p < 0.001, "***", ifelse(p < 0.01, "**", ifelse(p < 0.05, "*", "")))) %>%
+  dplyr::select(espece, variable, edf, Chi.sq, p, p_adj, signif)
+
+tab_signif %>% mutate(across(c(edf, Chi.sq), ~ round(.x, 2)), across(c(p, p_adj), ~ signif(.x, 3)))
+
+# Format large : une ligne par variable, une colonne par espèce (étoiles)
+tab_signif %>%
+  mutate(variable = coalesce(unname(vars_env[variable]), variable)) %>%
+  dplyr::select(variable, espece, signif) %>%
+  pivot_wider(names_from = espece, values_from = signif)
+```
+
